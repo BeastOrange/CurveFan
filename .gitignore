@@ -1,0 +1,13 @@
+.build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.bak
+.swiftpm/
+.sisyphus/
