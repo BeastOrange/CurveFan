@@ -15,15 +15,13 @@ struct AppWindowView: View {
             detailView
                 .navigationTitle(selectedSection?.title ?? "FanFlow")
                 .toolbar {
-                    ToolbarItemGroup(placement: .primaryAction) {
+                    ToolbarItem(placement: .primaryAction) {
                         Button {
                             Task { await state.checkDaemon() }
                         } label: {
                             Image(systemName: "arrow.clockwise")
                         }
                         .help("Refresh helper connection")
-
-                        HelperStatusBadge(isConnected: isConnected)
                     }
                 }
         }
@@ -35,8 +33,14 @@ struct AppWindowView: View {
         switch selectedSection ?? .overview {
         case .overview:
             OverviewView(state: state)
-        case .fans, .sensors, .presets, .settings:
-            PlaceholderSection(section: selectedSection ?? .overview)
+        case .fans:
+            FansView(state: state)
+        case .sensors:
+            SensorsView(state: state)
+        case .presets:
+            PresetsView(state: state)
+        case .settings:
+            SettingsPageView(state: state)
         }
     }
 
@@ -98,15 +102,13 @@ struct SidebarList: View {
         List(selection: $selectedSection) {
             Section("Monitor") {
                 ForEach(AppSection.monitoring) { section in
-                    Label(section.title, systemImage: section.icon)
-                        .tag(Optional(section))
+                    SidebarNavigationLink(section: section, selectedSection: $selectedSection)
                 }
             }
 
             Section("Configure") {
                 ForEach(AppSection.configuration) { section in
-                    Label(section.title, systemImage: section.icon)
-                        .tag(Optional(section))
+                    SidebarNavigationLink(section: section, selectedSection: $selectedSection)
                 }
             }
         }
@@ -116,6 +118,22 @@ struct SidebarList: View {
         .safeAreaInset(edge: .bottom) {
             SidebarStatus(isConnected: isConnected)
         }
+    }
+}
+
+private struct SidebarNavigationLink: View {
+    let section: AppSection
+    @Binding var selectedSection: AppSection?
+
+    var body: some View {
+        NavigationLink(value: section) {
+            Label(section.title, systemImage: section.icon)
+        }
+        .tag(section)
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded {
+            selectedSection = section
+        })
     }
 }
 
@@ -138,25 +156,5 @@ struct SidebarStatus: View {
             .padding(.bottom, 12)
         }
         .background(.bar)
-    }
-}
-
-struct PlaceholderSection: View {
-    let section: AppSection
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(section.subtitle)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            ContentUnavailableView(
-                section.title,
-                systemImage: section.icon,
-                description: Text("This section will use the same native macOS layout system as Overview.")
-            )
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .textBackgroundColor))
     }
 }

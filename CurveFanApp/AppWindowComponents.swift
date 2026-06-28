@@ -1,19 +1,36 @@
 import SwiftUI
 import CurveFanCore
 
-struct HelperStatusBadge: View {
+struct PageHeader: View {
+    let subtitle: String
     let isConnected: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(isConnected ? .green : .red)
-                .frame(width: 8, height: 8)
+        HStack(alignment: .firstTextBaseline) {
+            Text(subtitle)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            ConnectionStatusPill(isConnected: isConnected)
+        }
+    }
+}
+
+struct ConnectionStatusPill: View {
+    let isConnected: Bool
+
+    var body: some View {
+        Label {
             Text(isConnected ? "Connected" : "Offline")
                 .font(.callout.weight(.semibold))
+        } icon: {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(isConnected ? .green : .red)
         }
+        .labelStyle(.titleAndIcon)
         .padding(.horizontal, 12)
-        .frame(height: 30)
+        .frame(height: 28)
         .background(.regularMaterial, in: Capsule())
         .help(isConnected ? "Helper is connected" : "Helper is offline")
     }

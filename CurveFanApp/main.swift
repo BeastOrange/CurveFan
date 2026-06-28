@@ -24,7 +24,7 @@ struct CurveFanApp: App {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: state.isFanFlowControlActive ? "fan.fill" : "fan")
-                if let rpm = state.fanInfo[0]?.actualRPM {
+                if state.showMenuBarRPM, let rpm = state.fanInfo[0]?.actualRPM {
                     Text("\(formatRPM(rpm)) RPM")
                         .monospacedDigit()
                 }
@@ -109,10 +109,13 @@ final class AppState: ObservableObject {
     @Published var connectionStatus: ConnectionStatus = .disconnected
     @Published var activePreset: Preset?
     @Published var isManualMode = false
+    @Published var manualFanIDs: Set<Int> = []
     @Published var manualRPM: Double = 0
     @Published var pollingInterval: TimeInterval = 2.0
     @Published var useFahrenheit = false
+    @Published var showMenuBarRPM = true
     @Published var rpmHistory: [RPMHistorySample] = []
+    @Published var lastPollDate: Date?
 
     private let reader = TemperatureReader.shared
     private let controller = FanController.shared
@@ -141,6 +144,16 @@ final class AppState: ObservableObject {
                 do {
                     let info = try await controller.getFanInfo(0)
                     fanInfo[0] = info
+                    let count = max(info.fanCount, 1)
+                    if count > 1 {
+                        for fan in 1..<count {
+                            if let fanInfo = try? await controller.getFanInfo(fan) {
+                                self.fanInfo[fan] = fanInfo
+                            }
+                        }
+                    }
+                    fanInfo = fanInfo.filter { $0.key < count }
+                    lastPollDate = Date()
                     appendRPMHistory(info.actualRPM)
                     if manualRPM == 0 {
                         manualRPM = info.actualRPM
@@ -152,26 +165,59 @@ final class AppState: ObservableObject {
         }
     }
 
+    func setPollingInterval(_ interval: TimeInterval) {
+        guard pollingInterval != interval else { return }
+        pollingInterval = interval
+        if case .connected = connectionStatus {
+            startPolling()
+        }
+    }
+
     func setManualRPM(_ rpm: Double) async {
-        isManualMode = true
+        await setManualRPM(rpm, fan: 0)
+    }
+
+    func setManualRPM(_ rpm: Double, fan: Int) async {
         do {
-            try await controller.unlockAndSetRPM(0, rpm: Int(rpm))
+            try await controller.unlockAndSetRPM(fan, rpm: Int(rpm))
+            manualFanIDs.insert(fan)
+            isManualMode = true
+            if fan == 0 {
+                manualRPM = rpm
+            }
+            if let info = try? await controller.getFanInfo(fan) {
+                fanInfo[fan] = info
+            }
         } catch {
             connectionStatus = .error(error.localizedDescription)
         }
     }
 
     func restoreAuto() async {
-        isManualMode = false
-        activePreset = .auto
-        await controller.stopCurveControl(0)
+        await restoreAuto(fan: 0)
+    }
+
+    func restoreAuto(fan: Int) async {
+        manualFanIDs.remove(fan)
+        isManualMode = !manualFanIDs.isEmpty
+        if fan == 0 {
+            activePreset = .auto
+        }
+        await controller.stopCurveControl(fan)
+        if let info = try? await controller.getFanInfo(fan) {
+            fanInfo[fan] = info
+        }
     }
 
     func restoreAutoForShutdown() async {
         pollTask?.cancel()
         pollTask = nil
         isManualMode = false
-        await controller.stopCurveControl(0)
+        manualFanIDs.removeAll()
+        activePreset = .auto
+        for fan in 0..<knownFanCount {
+            await controller.stopCurveControl(fan)
+        }
     }
 
     func quitAfterRestoringAuto() {
@@ -193,12 +239,16 @@ final class AppState: ObservableObject {
             connectionStatus = .error("No readable temperature sensor for preset")
             return
         }
-        isManualMode = false
+        manualFanIDs.remove(0)
+        isManualMode = !manualFanIDs.isEmpty
         await controller.startCurveControl(fan: 0, curve: curve, sensorKey: sensorKey)
     }
 
     var maxRPM: Double { fanInfo[0]?.maxRPM ?? 7200 }
     var minRPM: Double { fanInfo[0]?.minRPM ?? 1200 }
+    var knownFanCount: Int {
+        max(fanInfo.values.map(\.fanCount).max() ?? 1, 1)
+    }
     var presets: [Preset] {
         PresetManager.shared.defaults(maxRPM: Int(maxRPM), sensorKey: defaultSensorKey)
     }

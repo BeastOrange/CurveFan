@@ -7,9 +7,10 @@ struct OverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Apple Silicon thermal and fan control")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+                PageHeader(
+                    subtitle: "Apple Silicon thermal and fan control",
+                    isConnected: isConnected
+                )
 
                 OverviewSummaryGroup(
                     rpm: fanInfo?.actualRPM,
@@ -51,6 +52,11 @@ struct OverviewView: View {
 
     private var fanInfo: FanInfo? {
         state.fanInfo[0]
+    }
+
+    private var isConnected: Bool {
+        if case .connected = state.connectionStatus { return true }
+        return false
     }
     private var selectedPreset: Preset? {
         if let activeName = state.activePreset?.name,
