@@ -11,3 +11,4 @@ DerivedData/
 *.bak
 .swiftpm/
 .sisyphus/
+local-docs/
