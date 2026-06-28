@@ -4,9 +4,17 @@ import CurveFanCore
 
 @main
 struct CurveFanApp: App {
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @StateObject private var state = AppState()
 
     var body: some Scene {
+        WindowGroup("FanFlow", id: "main") {
+            AppWindowView(state: state)
+                .frame(minWidth: 1180, minHeight: 720)
+                .background(MainWindowLifecycle())
+        }
+        .defaultSize(width: 1280, height: 760)
+
         MenuBarExtra {
             MainView(state: state)
                 .frame(width: 372, height: 520)
@@ -31,6 +39,70 @@ struct CurveFanApp: App {
 }
 
 @MainActor
+final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+}
+
+struct MainWindowLifecycle: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        Task { @MainActor in
+            guard let window = view.window else { return }
+            context.coordinator.observe(window: window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        Task { @MainActor in
+            guard let window = nsView.window else { return }
+            context.coordinator.observe(window: window)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator {
+        private weak var observedWindow: NSWindow?
+        private var closeObserver: NSObjectProtocol?
+
+        deinit {
+            if let closeObserver {
+                NotificationCenter.default.removeObserver(closeObserver)
+            }
+        }
+
+        @MainActor
+        func observe(window: NSWindow) {
+            guard observedWindow !== window else { return }
+            if let closeObserver {
+                NotificationCenter.default.removeObserver(closeObserver)
+            }
+            observedWindow = window
+            NSApplication.shared.setActivationPolicy(.regular)
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    NSApplication.shared.setActivationPolicy(.accessory)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
 final class AppState: ObservableObject {
     @Published var temperatures: [TemperatureReading] = []
     @Published var fanInfo: [Int: FanInfo] = [:]
@@ -40,6 +112,7 @@ final class AppState: ObservableObject {
     @Published var manualRPM: Double = 0
     @Published var pollingInterval: TimeInterval = 2.0
     @Published var useFahrenheit = false
+    @Published var rpmHistory: [RPMHistorySample] = []
 
     private let reader = TemperatureReader.shared
     private let controller = FanController.shared
@@ -68,6 +141,7 @@ final class AppState: ObservableObject {
                 do {
                     let info = try await controller.getFanInfo(0)
                     fanInfo[0] = info
+                    appendRPMHistory(info.actualRPM)
                     if manualRPM == 0 {
                         manualRPM = info.actualRPM
                     }
@@ -149,4 +223,17 @@ final class AppState: ObservableObject {
     var isFanFlowControlActive: Bool {
         isManualMode || (activePreset?.name != nil && activePreset?.name != "Auto")
     }
+
+    private func appendRPMHistory(_ rpm: Double) {
+        rpmHistory.append(RPMHistorySample(date: Date(), rpm: rpm))
+        if rpmHistory.count > 48 {
+            rpmHistory.removeFirst(rpmHistory.count - 48)
+        }
+    }
+}
+
+struct RPMHistorySample: Identifiable, Equatable {
+    let id = UUID()
+    let date: Date
+    let rpm: Double
 }

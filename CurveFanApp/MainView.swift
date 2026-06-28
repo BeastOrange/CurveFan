@@ -4,6 +4,7 @@ import CurveFanCore
 
 struct MainView: View {
     @ObservedObject var state: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 10) {
@@ -59,6 +60,11 @@ struct MainView: View {
             )
 
             FooterToolbar(
+                onOpenWindow: {
+                    NSApplication.shared.setActivationPolicy(.regular)
+                    openWindow(id: "main")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                },
                 onSettings: showSettings,
                 onRestoreAuto: {
                     Task { await state.restoreAuto() }

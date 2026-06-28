@@ -141,12 +141,18 @@ struct ManualTargetCard: View {
 }
 
 struct FooterToolbar: View {
+    let onOpenWindow: () -> Void
     let onSettings: () -> Void
     let onRestoreAuto: () -> Void
     let onQuit: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
+            Button(action: onOpenWindow) {
+                Label("Window", systemImage: "macwindow")
+            }
+            .buttonStyle(.borderless)
+
             Button(action: onSettings) {
                 Label("Settings", systemImage: "gearshape")
             }
