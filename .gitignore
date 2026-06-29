@@ -12,3 +12,4 @@ DerivedData/
 .swiftpm/
 .sisyphus/
 local-docs/
+*.dmg
