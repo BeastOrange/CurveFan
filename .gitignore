@@ -13,3 +13,7 @@ DerivedData/
 .sisyphus/
 local-docs/
 *.dmg
+build_dmg.sh
+install.sh
+dmgbuild_settings.py
+docs/安装说明.txt
