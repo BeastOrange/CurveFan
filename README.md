@@ -11,6 +11,12 @@
   ![License](https://img.shields.io/badge/License-MIT-22c55e)
 </div>
 
+<div align="center">
+
+English | [简体中文](README-zh.md)
+
+</div>
+
 ---
 
 CurveFan sits in your menu bar and gives you direct control over fan speed through the SMC on Apple Silicon Macs. A privileged LaunchDaemon handles all hardware writes; the UI process stays unprivileged. macOS automatic fan control is always restored when you quit or select **System Auto**.
