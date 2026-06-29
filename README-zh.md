@@ -19,6 +19,14 @@
 
 ---
 
+<div align="center">
+  <img src="docs/screenshot-menubar.png" width="320" alt="菜单栏面板">
+  &nbsp;&nbsp;
+  <img src="docs/screenshot-main.png" width="580" alt="主窗口">
+</div>
+
+---
+
 CurveFan 是一款运行在菜单栏的原生 macOS 应用，通过 SMC 直接控制 Apple Silicon Mac 的风扇转速。所有硬件写入由特权 LaunchDaemon 负责执行，UI 进程无特权运行。退出应用或选择 **System Auto** 时，会自动恢复 macOS 原生风扇管理。
 
 > **警告** — CurveFan 直接写入 SMC 风扇寄存器，手动控制风扇存在热管理风险，请谨慎使用。

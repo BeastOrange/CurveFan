@@ -64,7 +64,11 @@ struct MainView: View {
             FooterToolbar(
                 onOpenWindow: {
                     NSApplication.shared.setActivationPolicy(.regular)
-                    curveFanOpenWindow?("main")
+                    if let win = curveFanMainWindow {
+                        win.makeKeyAndOrderFront(nil)
+                    } else {
+                        curveFanOpenWindow?("main")
+                    }
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 },
                 onSettings: showSettings,
@@ -130,6 +134,7 @@ struct MainView: View {
     }
 
     private func showSettings() {
+        NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
         if #available(macOS 14, *) {
             NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)

@@ -3,10 +3,10 @@ import AppKit
 import Combine
 import CurveFanCore
 
-/// Bridges SwiftUI's openWindow into AppKit-hosted views (the menu bar panel).
-/// Set from the main window's root view; the captured OpenWindowAction stays
-/// valid across window lifecycles because it is an app-level action.
+/// Set by OpenWindowCapture; opens a SwiftUI WindowGroup from AppKit context.
 @MainActor var curveFanOpenWindow: ((String) -> Void)?
+/// Set by MainWindowLifecycle; used to bring the existing main window to front.
+@MainActor var curveFanMainWindow: NSWindow?
 
 /// Borderless panel that can still become key — required so sliders and
 /// buttons inside the SwiftUI content receive events.

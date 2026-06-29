@@ -93,6 +93,7 @@ struct MainWindowLifecycle: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(closeObserver)
             }
             observedWindow = window
+            curveFanMainWindow = window          // expose for menu bar panel
             NSApplication.shared.setActivationPolicy(.regular)
             closeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
@@ -100,6 +101,7 @@ struct MainWindowLifecycle: NSViewRepresentable {
                 queue: .main
             ) { _ in
                 Task { @MainActor in
+                    curveFanMainWindow = nil
                     NSApplication.shared.setActivationPolicy(.accessory)
                 }
             }
