@@ -8,7 +8,7 @@ struct CurveFanApp: App {
     @StateObject private var state = AppState()
 
     var body: some Scene {
-        WindowGroup("FanFlow", id: "main") {
+        WindowGroup("CurveFan", id: "main") {
             AppWindowView(state: state)
                 .frame(minWidth: 1180, minHeight: 720)
                 .background(MainWindowLifecycle())
@@ -23,7 +23,7 @@ struct CurveFanApp: App {
                 }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: state.isFanFlowControlActive ? "fan.fill" : "fan")
+                Image(systemName: state.isCurveFanControlActive ? "fan.fill" : "fan")
                 if state.showMenuBarRPM, let rpm = state.fanInfo[0]?.actualRPM {
                     Text("\(formatRPM(rpm)) RPM")
                         .monospacedDigit()
@@ -121,6 +121,9 @@ final class AppState: ObservableObject {
     private let controller = FanController.shared
     private let ipc = IPCClient.shared
     private var pollTask: Task<Void, Never>?
+    /// Active fan curve driven by the poll loop, keyed by fan index. Empty when
+    /// no preset curve is running.
+    private var activeCurves: [Int: (curve: FanCurve, sensorKey: String)] = [:]
 
     init() {
         Task { await checkDaemon() }
@@ -158,9 +161,29 @@ final class AppState: ObservableObject {
                     if manualRPM == 0 {
                         manualRPM = info.actualRPM
                     }
+                    await applyActiveCurves()
                 } catch {
                     connectionStatus = .disconnected
                 }
+            }
+        }
+    }
+
+    /// Drives any active preset curves from the temperatures and fan info already
+    /// fetched this poll cycle, so curve control adds no extra SMC round trips.
+    private func applyActiveCurves() async {
+        guard !activeCurves.isEmpty else { return }
+        for (fan, entry) in activeCurves {
+            guard let info = fanInfo[fan],
+                  let temp = temperatures.first(where: { $0.key == entry.sensorKey })?.value else {
+                continue
+            }
+            let target = entry.curve.rpm(for: temp, minRPM: Int(info.minRPM), maxRPM: Int(info.maxRPM))
+            guard target > 0 else { continue }
+            do {
+                try await controller.unlockAndSetRPM(fan, rpm: target)
+            } catch {
+                NSLog("CurveFan curve control failed: \(error.localizedDescription)")
             }
         }
     }
@@ -180,6 +203,7 @@ final class AppState: ObservableObject {
     func setManualRPM(_ rpm: Double, fan: Int) async {
         do {
             try await controller.unlockAndSetRPM(fan, rpm: Int(rpm))
+            activeCurves[fan] = nil
             manualFanIDs.insert(fan)
             isManualMode = true
             if fan == 0 {
@@ -198,12 +222,13 @@ final class AppState: ObservableObject {
     }
 
     func restoreAuto(fan: Int) async {
+        activeCurves[fan] = nil
         manualFanIDs.remove(fan)
         isManualMode = !manualFanIDs.isEmpty
         if fan == 0 {
             activePreset = .auto
         }
-        await controller.stopCurveControl(fan)
+        await controller.restoreAutoLogging(fan)
         if let info = try? await controller.getFanInfo(fan) {
             fanInfo[fan] = info
         }
@@ -214,9 +239,10 @@ final class AppState: ObservableObject {
         pollTask = nil
         isManualMode = false
         manualFanIDs.removeAll()
+        activeCurves.removeAll()
         activePreset = .auto
         for fan in 0..<knownFanCount {
-            await controller.stopCurveControl(fan)
+            await controller.restoreAutoLogging(fan)
         }
     }
 
@@ -241,7 +267,7 @@ final class AppState: ObservableObject {
         }
         manualFanIDs.remove(0)
         isManualMode = !manualFanIDs.isEmpty
-        await controller.startCurveControl(fan: 0, curve: curve, sensorKey: sensorKey)
+        activeCurves[0] = (curve: curve, sensorKey: sensorKey)
     }
 
     var maxRPM: Double { fanInfo[0]?.maxRPM ?? 7200 }
@@ -270,7 +296,7 @@ final class AppState: ObservableObject {
         return .red
     }
 
-    var isFanFlowControlActive: Bool {
+    var isCurveFanControlActive: Bool {
         isManualMode || (activePreset?.name != nil && activePreset?.name != "Auto")
     }
 

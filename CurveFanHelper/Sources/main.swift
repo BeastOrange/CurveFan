@@ -43,6 +43,13 @@ func handleCommand(_ json: Data) -> Data {
         case .readKeyData(let key):
             let payload = try readKeyData(key)
             return response(success: true, data: payload.bytes, dataType: payload.dataType)
+        case .readKeysData(let keys):
+            var batch: [String: SMCKeyData] = [:]
+            for key in keys {
+                guard let payload = try? readKeyData(key) else { continue }
+                batch[key] = SMCKeyData(data: payload.bytes, dataType: payload.dataType)
+            }
+            return response(success: true, batch: batch)
         case .writeFanRPM(let fan, let rpm):
             try writeFanRPM(fan: fan, rpm: rpm)
             return response(success: true)
@@ -73,6 +80,7 @@ func response(
     fanInfo: FanInfo? = nil,
     data: [UInt8]? = nil,
     dataType: UInt32? = nil,
+    batch: [String: SMCKeyData]? = nil,
     error: String? = nil
 ) -> Data {
     let payload = IPCResponse(
@@ -81,6 +89,7 @@ func response(
         fanInfo: fanInfo,
         data: data,
         dataType: dataType,
+        batch: batch,
         error: error
     )
     return (try? encoder.encode(payload)) ?? Data()

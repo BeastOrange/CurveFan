@@ -3,7 +3,6 @@ import AppKit
 
 public actor FanController {
     public static let shared = FanController()
-    private var controlTask: Task<Void, Never>?
     private let ipc = IPCClient.shared
 
     public func getFanInfo(_ fan: Int) async throws -> FanInfo {
@@ -27,36 +26,7 @@ public actor FanController {
         guard resp.success else { throw IPCError.daemonError(resp.error ?? "restore failed") }
     }
 
-    public func readKeyValue(_ key: String) async throws -> Double {
-        let resp = try await ipc.send(.readKey(key: key))
-        guard resp.success, let value = resp.value else {
-            throw IPCError.daemonError(resp.error ?? "read failed")
-        }
-        return value
-    }
-
-    public func startCurveControl(fan: Int, curve: FanCurve, sensorKey: String) {
-        controlTask?.cancel()
-        controlTask = Task {
-            while !Task.isCancelled {
-                do {
-                    let temp = try await readKeyValue(sensorKey)
-                    let info = try await getFanInfo(fan)
-                    let target = curve.rpm(for: temp, minRPM: Int(info.minRPM), maxRPM: Int(info.maxRPM))
-                    if target > 0 {
-                        try await unlockAndSetRPM(fan, rpm: target)
-                    }
-                } catch {
-                    NSLog("CurveFan curve control failed: \(error.localizedDescription)")
-                }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-            }
-        }
-    }
-
-    public func stopCurveControl(_ fan: Int) async {
-        controlTask?.cancel()
-        controlTask = nil
+    public func restoreAutoLogging(_ fan: Int) async {
         do {
             try await restoreAuto(fan)
         } catch {

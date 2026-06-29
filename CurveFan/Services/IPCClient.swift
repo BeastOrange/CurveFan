@@ -7,15 +7,40 @@ public actor IPCClient {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    /// Dedicated queue for blocking socket syscalls so they never occupy a
+    /// Swift cooperative-pool thread. Serial to preserve one-request-at-a-time
+    /// ordering without blocking the actor's executor.
+    private let ioQueue = DispatchQueue(label: "com.curvefan.ipc.io")
+
     public var isAvailable: Bool {
         FileManager.default.fileExists(atPath: socketPath)
     }
 
-    public func send(_ command: IPCCommand) throws -> IPCResponse {
+    public func send(_ command: IPCCommand) async throws -> IPCResponse {
         let reqData = try encoder.encode(command)
+        let path = socketPath
+        let responseData = try await withCheckedThrowingContinuation { continuation in
+            ioQueue.async {
+                continuation.resume(with: Result { try IPCClient.roundTrip(reqData, socketPath: path) })
+            }
+        }
+        return try decoder.decode(IPCResponse.self, from: responseData)
+    }
+
+    public func ping() async -> Bool {
+        do {
+            let resp = try await send(.ping)
+            return resp.success
+        } catch {
+            return false
+        }
+    }
+
+    /// Performs one blocking connect / send / receive / close round trip.
+    /// Runs on `ioQueue`, never on the cooperative pool.
+    private static func roundTrip(_ reqData: Data, socketPath: String) throws -> Data {
         let sock = socket(AF_UNIX, SOCK_STREAM, 0)
         guard sock >= 0 else { throw IPCError.socketFailed }
-
         defer { close(sock) }
 
         var addr = sockaddr_un()
@@ -37,16 +62,7 @@ public actor IPCClient {
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
 
         try sendFrame(reqData, socket: sock)
-        return try decoder.decode(IPCResponse.self, from: receiveFrame(socket: sock))
-    }
-
-    public func ping() -> Bool {
-        do {
-            let resp = try send(.ping)
-            return resp.success
-        } catch {
-            return false
-        }
+        return try receiveFrame(socket: sock)
     }
 }
 
@@ -71,14 +87,14 @@ public enum IPCError: LocalizedError {
 }
 
 private extension IPCClient {
-    func sendFrame(_ data: Data, socket: Int32) throws {
+    static func sendFrame(_ data: Data, socket: Int32) throws {
         let frame = try IPCFraming.encode(data)
         try frame.withUnsafeBytes { raw in
             try sendAll(raw, socket: socket)
         }
     }
 
-    func receiveFrame(socket: Int32) throws -> Data {
+    static func receiveFrame(socket: Int32) throws -> Data {
         var header = [UInt8](repeating: 0, count: 4)
         try readAll(into: &header, socket: socket)
         let length = try IPCFraming.decodeLength(header)
@@ -88,7 +104,7 @@ private extension IPCClient {
         return Data(payload)
     }
 
-    func sendAll(_ bytes: UnsafeRawBufferPointer, socket: Int32) throws {
+    static func sendAll(_ bytes: UnsafeRawBufferPointer, socket: Int32) throws {
         guard let base = bytes.baseAddress else { return }
         var sent = 0
         while sent < bytes.count {
@@ -98,7 +114,7 @@ private extension IPCClient {
         }
     }
 
-    func readAll(into buffer: inout [UInt8], socket: Int32) throws {
+    static func readAll(into buffer: inout [UInt8], socket: Int32) throws {
         var received = 0
         while received < buffer.count {
             let remaining = buffer.count - received

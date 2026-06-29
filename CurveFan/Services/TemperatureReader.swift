@@ -14,25 +14,33 @@ public actor TemperatureReader {
     private let ipc = IPCClient.shared
 
     public func readings(for chip: ChipGen) async -> [TemperatureReading] {
-        let keys = SMCKeyDB.keys(for: .cpu, chip: chip) +
+        let defs = SMCKeyDB.keys(for: .cpu, chip: chip) +
                    SMCKeyDB.keys(for: .gpu, chip: chip) +
                    SMCKeyDB.keys(for: .memory, chip: chip) +
                    SMCKeyDB.keys(for: .system, chip: chip)
 
-        var readings: [TemperatureReading] = []
-        for def in keys {
-            do {
-                let resp = try await ipc.send(.readKeyData(key: def.key))
-                guard resp.success, let bytes = resp.data, let dataType = resp.dataType else {
-                    throw IPCError.daemonError(resp.error ?? "read failed")
-                }
-                let value = try SMCDecoder.shared.decode(rawValue: dataType, bytes: bytes)
-                readings.append(TemperatureReading(key: def.key, name: def.name, group: def.group, value: value, timestamp: Date()))
-            } catch {
-                NSLog("CurveFan temperature read failed for \(def.key): \(error.localizedDescription)")
+        let batch: [String: SMCKeyData]
+        do {
+            let resp = try await ipc.send(.readKeysData(keys: defs.map(\.key)))
+            guard resp.success, let result = resp.batch else {
+                throw IPCError.daemonError(resp.error ?? "batch read failed")
             }
+            batch = result
+        } catch {
+            NSLog("CurveFan temperature batch read failed: \(error.localizedDescription)")
+            return []
         }
-        return readings
+
+        let now = Date()
+        // Iterate `defs` (not the dictionary) to keep deterministic ordering.
+        return defs.compactMap { def -> TemperatureReading? in
+            guard let raw = batch[def.key] else { return nil }
+            guard let value = try? SMCDecoder.shared.decode(rawValue: raw.dataType, bytes: raw.data) else {
+                NSLog("CurveFan temperature decode failed for \(def.key)")
+                return nil
+            }
+            return TemperatureReading(key: def.key, name: def.name, group: def.group, value: value, timestamp: now)
+        }
     }
 
     public func stream(interval: TimeInterval = 2.0) -> AsyncStream<[TemperatureReading]> {
