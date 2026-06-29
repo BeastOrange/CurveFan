@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import CurveFanCore
 
 struct PageHeader: View {
@@ -36,23 +37,24 @@ struct ConnectionStatusPill: View {
     }
 }
 
+/// Key-value metric rows using native Grid alignment.
 struct NativeMetricTable: View {
     let rows: [(String, String)]
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                if index > 0 { Divider() }
-                LabeledContent(row.0) {
+        Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    Text(row.0)
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.leading)
                     Text(row.1)
-                        .font(.title3.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .monospacedDigit()
+                        .gridColumnAlignment(.leading)
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 52)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -66,12 +68,10 @@ struct PresetButton: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(preset.name)
-                        .font(.headline)
+                    Text(preset.name).font(.headline)
                     Spacer()
                     if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.callout.weight(.semibold))
+                        Image(systemName: "checkmark").font(.callout.weight(.semibold))
                     }
                 }
                 Text(presetRPMText)
@@ -116,13 +116,13 @@ struct PreferencesGroup: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 132)
         } label: {
             Label("Preferences", systemImage: "gearshape")
         }
     }
 }
 
+/// RPM history chart using native Swift Charts.
 struct RPMTrendChart: View {
     let samples: [RPMHistorySample]
     let currentRPM: Double?
@@ -130,77 +130,31 @@ struct RPMTrendChart: View {
     let maxRPM: Double
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .topTrailing) {
-                chartGrid(in: proxy.size)
-                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                chartLine(in: proxy.size)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                chartDots(in: proxy.size)
-                chartLabels
-            }
+        Chart(chartData, id: \.index) { point in
+            AreaMark(
+                x: .value("Time", point.index),
+                y: .value("RPM", point.rpm)
+            )
+            .opacity(0.12)
+            LineMark(
+                x: .value("Time", point.index),
+                y: .value("RPM", point.rpm)
+            )
+            .interpolationMethod(.catmullRom)
+            PointMark(
+                x: .value("Time", point.index),
+                y: .value("RPM", point.rpm)
+            )
+            .symbolSize(25)
         }
+        .chartYScale(domain: minRPM...maxRPM)
+        .chartXAxis(.hidden)
         .accessibilityLabel("RPM history")
     }
 
-    private var values: [Double] {
+    private var chartData: [(index: Int, rpm: Double)] {
         let history = samples.map(\.rpm)
-        if history.count >= 2 { return history }
-        let rpm = currentRPM ?? minRPM
-        return [rpm, rpm, rpm, rpm]
-    }
-
-    private var chartLabels: some View {
-        VStack(alignment: .trailing, spacing: 28) {
-            Text(formatRPM(maxRPM))
-            Text(formatRPM((minRPM + maxRPM) / 2))
-            Text(formatRPM(minRPM))
-        }
-        .font(.callout.monospacedDigit())
-        .foregroundStyle(.secondary)
-        .padding(.trailing, 4)
-    }
-
-    private func chartGrid(in size: CGSize) -> Path {
-        var path = Path()
-        for fraction in [0.18, 0.5, 0.82] {
-            let y = size.height * fraction
-            path.move(to: CGPoint(x: 0, y: y))
-            path.addLine(to: CGPoint(x: size.width - 70, y: y))
-        }
-        return path
-    }
-
-    private func chartLine(in size: CGSize) -> Path {
-        var path = Path()
-        let points = mappedPoints(in: size)
-        guard let first = points.first else { return path }
-        path.move(to: first)
-        for point in points.dropFirst() {
-            path.addLine(to: point)
-        }
-        return path
-    }
-
-    @ViewBuilder
-    private func chartDots(in size: CGSize) -> some View {
-        ForEach(Array(mappedPoints(in: size).enumerated()), id: \.offset) { _, point in
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 6, height: 6)
-                .position(point)
-        }
-    }
-
-    private func mappedPoints(in size: CGSize) -> [CGPoint] {
-        let width = max(size.width - 92, 1)
-        let height = max(size.height - 42, 1)
-        let denominator = max(Double(values.count - 1), 1)
-        return values.enumerated().map { index, value in
-            let x = Double(index) / denominator * width
-            let yRatio = 1 - ((value - minRPM) / max(maxRPM - minRPM, 1))
-            let y = 16 + min(max(yRatio, 0), 1) * height
-            return CGPoint(x: x, y: y)
-        }
+        let values: [Double] = history.count >= 2 ? history : Array(repeating: currentRPM ?? minRPM, count: 4)
+        return values.enumerated().map { (index: $0.offset, rpm: $0.element) }
     }
 }

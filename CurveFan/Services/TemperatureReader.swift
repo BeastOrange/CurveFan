@@ -19,16 +19,12 @@ public actor TemperatureReader {
                    SMCKeyDB.keys(for: .memory, chip: chip) +
                    SMCKeyDB.keys(for: .system, chip: chip)
 
+        // Attempt batch read; fall back to per-key reads if the helper doesn't support it.
         let batch: [String: SMCKeyData]
-        do {
-            let resp = try await ipc.send(.readKeysData(keys: defs.map(\.key)))
-            guard resp.success, let result = resp.batch else {
-                throw IPCError.daemonError(resp.error ?? "batch read failed")
-            }
+        if let result = await batchRead(keys: defs.map(\.key)) {
             batch = result
-        } catch {
-            NSLog("CurveFan temperature batch read failed: \(error.localizedDescription)")
-            return []
+        } else {
+            return await legacyReadings(defs: defs)
         }
 
         let now = Date()
@@ -56,5 +52,23 @@ public actor TemperatureReader {
             }
             cont.onTermination = { _ in task.cancel() }
         }
+    }
+
+    private func batchRead(keys: [String]) async -> [String: SMCKeyData]? {
+        guard let resp = try? await ipc.send(.readKeysData(keys: keys)),
+              resp.success, let batch = resp.batch else { return nil }
+        return batch
+    }
+
+    private func legacyReadings(defs: [SMCKeyDefinition]) async -> [TemperatureReading] {
+        let now = Date()
+        var results: [TemperatureReading] = []
+        for def in defs {
+            guard let resp = try? await ipc.send(.readKeyData(key: def.key)),
+                  resp.success, let bytes = resp.data, let dataType = resp.dataType,
+                  let value = try? SMCDecoder.shared.decode(rawValue: dataType, bytes: bytes) else { continue }
+            results.append(TemperatureReading(key: def.key, name: def.name, group: def.group, value: value, timestamp: now))
+        }
+        return results
     }
 }

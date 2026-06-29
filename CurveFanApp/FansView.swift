@@ -3,7 +3,7 @@ import CurveFanCore
 
 struct FansView: View {
     @ObservedObject var state: AppState
-    @State private var selectedFanID: Int? = 0
+    @State private var selectedFanID: Int? = nil
 
     var body: some View {
         ScrollView {
@@ -30,7 +30,7 @@ struct FansView: View {
                         selectedRow: selectedRow,
                         isConnected: isConnected
                     )
-                    .frame(width: 340)
+                    .frame(minWidth: 260, maxWidth: 340)
                 }
 
                 CurveSummaryGroup(
@@ -41,9 +41,7 @@ struct FansView: View {
                 )
             }
             .padding(24)
-            .frame(maxWidth: 1180, alignment: .topLeading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var rows: [FanDisplayRow] {

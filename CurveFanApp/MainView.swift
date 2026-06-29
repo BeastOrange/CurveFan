@@ -4,49 +4,42 @@ import CurveFanCore
 
 struct MainView: View {
     @ObservedObject var state: AppState
-    @Environment(\.openWindow) private var openWindow
+    // openWindow is unavailable in NSHostingView; use the global bridge set by OpenWindowCapture
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
             MenuHeaderCard(
                 rpm: fanInfo?.actualRPM,
                 minRPM: state.minRPM,
                 maxRPM: state.maxRPM,
-                cpuText: cpuText,
-                gpuText: gpuText,
                 controlState: controlState
             )
 
-            connectionBanner
+            Divider()
 
-            QuickMetricGrid(
-                rpm: fanInfo?.actualRPM,
-                rangeText: rpmRangeText,
-                cpuText: cpuText,
-                gpuText: gpuText,
-                pollingText: "\(Int(state.pollingInterval))s"
-            )
+            alertBanner
 
-            ControlModeChooser(
+            // Compact metric row — no card backgrounds
+            HStack(spacing: 0) {
+                MetricPill(label: "CPU", value: cpuText)
+                Divider().frame(height: 28)
+                MetricPill(label: "GPU", value: gpuText)
+                Divider().frame(height: 28)
+                MetricPill(label: "Range", value: rpmRangeText)
+            }
+
+            Divider()
+
+            ModeAndPresetSection(
                 controlState: controlState,
-                curveName: preferredCurvePreset?.name ?? "Balanced",
-                onSystemAuto: {
-                    Task { await state.restoreAuto() }
-                },
-                onCurveFan: {
-                    guard let preset = preferredCurvePreset else { return }
-                    Task { await state.applyPreset(preset) }
-                }
-            )
-
-            PresetStrip(
                 presets: curvePresets,
                 activePresetName: activePresetName,
-                isEnabled: isConnected,
-                onSelect: { preset in
-                    Task { await state.applyPreset(preset) }
-                }
+                isConnected: isConnected,
+                onSystemAuto: { Task { await state.restoreAuto() } },
+                onSelectPreset: { preset in Task { await state.applyPreset(preset) } }
             )
+
+            Divider()
 
             ManualTargetCard(
                 manualRPM: $state.manualRPM,
@@ -54,34 +47,37 @@ struct MainView: View {
                 maxRPM: state.maxRPM,
                 isConnected: isConnected,
                 isActive: state.isManualMode,
-                onApply: {
-                    Task { await state.setManualRPM(state.manualRPM) }
-                }
+                onApply: { Task { await state.setManualRPM(state.manualRPM) } }
             )
+
+            Divider()
+
+            Toggle("Show RPM in menu bar", isOn: $state.showMenuBarRPM)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+            Divider()
 
             FooterToolbar(
                 onOpenWindow: {
                     NSApplication.shared.setActivationPolicy(.regular)
-                    openWindow(id: "main")
+                    curveFanOpenWindow?("main")
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 },
                 onSettings: showSettings,
-                onRestoreAuto: {
-                    Task { await state.restoreAuto() }
-                },
-                onQuit: {
-                    state.quitAfterRestoringAuto()
-                }
+                onRestoreAuto: { Task { await state.restoreAuto() } },
+                onQuit: { state.quitAfterRestoringAuto() }
             )
         }
-        .padding(12)
         .frame(width: 372)
-        .background(menuBackground)
     }
 
-    private var fanInfo: FanInfo? {
-        state.fanInfo[0]
-    }
+    // MARK: - Helpers
+
+    private var fanInfo: FanInfo? { state.fanInfo[0] }
 
     private var isConnected: Bool {
         if case .connected = state.connectionStatus { return true }
@@ -93,17 +89,7 @@ struct MainView: View {
         return name
     }
 
-    private var curvePresets: [Preset] {
-        state.presets.filter { $0.name != "Auto" }
-    }
-
-    private var preferredCurvePreset: Preset? {
-        if let activePresetName,
-           let current = curvePresets.first(where: { $0.name == activePresetName }) {
-            return current
-        }
-        return curvePresets.first(where: { $0.name == "Balanced" }) ?? curvePresets.first
-    }
+    private var curvePresets: [Preset] { state.presets.filter { $0.name != "Auto" } }
 
     private var controlState: MenuControlState {
         guard isConnected else { return .offline }
@@ -113,60 +99,34 @@ struct MainView: View {
         return .system
     }
 
-    private var cpuText: String {
-        formatSensorText(group: .cpu)
-    }
-
-    private var gpuText: String {
-        formatSensorText(group: .gpu)
-    }
-
-    private var rpmRangeText: String {
-        "\(formatRPM(state.minRPM))-\(formatRPM(state.maxRPM))"
-    }
+    private var cpuText: String { formatSensorText(group: .cpu) }
+    private var gpuText: String { formatSensorText(group: .gpu) }
+    private var rpmRangeText: String { "\(formatRPM(state.minRPM))–\(formatRPM(state.maxRPM))" }
 
     @ViewBuilder
-    private var connectionBanner: some View {
+    private var alertBanner: some View {
         switch state.connectionStatus {
-        case .connected:
-            if controlState == .externalManual {
-                AlertBanner(
-                    icon: "exclamationmark.triangle.fill",
-                    text: "Manual fan mode detected. Restore Auto if this was not intentional.",
-                    tint: .orange
-                )
-            }
+        case .connected where controlState == .externalManual:
+            AlertBanner(icon: "exclamationmark.triangle.fill",
+                        text: "Manual fan mode detected. Restore Auto if unintentional.",
+                        tint: .orange)
+            Divider()
         case .disconnected:
-            AlertBanner(
-                icon: "exclamationmark.triangle.fill",
-                text: "Helper disconnected. Run sudo bash setup.sh.",
-                tint: .orange
-            )
-        case .error(let message):
-            AlertBanner(icon: "xmark.octagon.fill", text: message, tint: .red)
-        }
-    }
-
-    private var menuBackground: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.03),
-                    Color.accentColor.opacity(0.08),
-                    Color.black.opacity(0.04)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            AlertBanner(icon: "exclamationmark.triangle.fill",
+                        text: "Helper disconnected. Run sudo bash setup.sh.",
+                        tint: .orange)
+            Divider()
+        case .error(let msg):
+            AlertBanner(icon: "xmark.octagon.fill", text: msg, tint: .red)
+            Divider()
+        default:
+            EmptyView()
         }
     }
 
     private func formatSensorText(group: SensorGroup) -> String {
-        guard let reading = state.temperatures.first(where: { $0.group == group }) else {
-            return "--"
-        }
-        return state.formatTemp(reading.value)
+        guard let r = state.temperatures.first(where: { $0.group == group }) else { return "--" }
+        return state.formatTemp(r.value)
     }
 
     private func showSettings() {
@@ -179,12 +139,30 @@ struct MainView: View {
     }
 }
 
+// MARK: - Compact metric pill (no card background)
+private struct MetricPill: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - MenuControlState & SettingsView (unchanged)
 enum MenuControlState: Equatable {
-    case offline
-    case system
-    case curve(String)
-    case manual
-    case externalManual
+    case offline, system, curve(String), manual, externalManual
 
     var title: String {
         switch self {
@@ -209,7 +187,7 @@ enum MenuControlState: Equatable {
     var isCurveFanControl: Bool {
         switch self {
         case .curve, .manual: return true
-        case .offline, .system, .externalManual: return false
+        default: return false
         }
     }
 
@@ -230,26 +208,26 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             Form {
-                Toggle("华氏度", isOn: $state.useFahrenheit)
-                Picker("更新间隔", selection: $state.pollingInterval) {
-                    Text("1 秒").tag(1.0)
-                    Text("2 秒").tag(2.0)
-                    Text("5 秒").tag(5.0)
+                Toggle("Fahrenheit", isOn: $state.useFahrenheit)
+                Picker("Polling interval", selection: $state.pollingInterval) {
+                    Text("1 second").tag(1.0)
+                    Text("2 seconds").tag(2.0)
+                    Text("5 seconds").tag(5.0)
                 }
             }
-            .tabItem { Text("通用") }
+            .tabItem { Text("General") }
             .padding()
 
             Form {
-                Section("关于") {
-                    Text("CurveFan v1.0.0")
-                    Text("开源风扇控制软件")
-                    Text("MIT License")
+                Section("About") {
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                    LabeledContent("Version", value: "CurveFan \(version)")
+                    LabeledContent("License", value: "MIT")
                 }
             }
-            .tabItem { Text("关于") }
+            .tabItem { Text("About") }
             .padding()
         }
-        .frame(width: 400, height: 300)
+        .frame(width: 360, height: 200)
     }
 }

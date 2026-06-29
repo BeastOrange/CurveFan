@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import CurveFanCore
 
 struct PresetsView: View {
@@ -19,7 +20,7 @@ struct PresetsView: View {
                         selectedPresetName: $selectedPresetName,
                         activePresetName: state.activePreset?.name
                     )
-                    .frame(width: 390)
+                    .frame(minWidth: 300, maxWidth: 420)
 
                     PresetDetailGroup(
                         preset: selectedPreset,
@@ -30,9 +31,7 @@ struct PresetsView: View {
                 }
             }
             .padding(24)
-            .frame(maxWidth: 1180, alignment: .topLeading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var selectedPreset: Preset {
@@ -231,52 +230,17 @@ private struct CurvePreview: View {
     let maxRPM: Double
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottomLeading) {
-                grid(in: proxy.size)
-                    .stroke(Color.secondary.opacity(0.22), lineWidth: 1)
-                line(in: proxy.size)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                ForEach(Array(mappedPoints(in: proxy.size).enumerated()), id: \.offset) { _, point in
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 8, height: 8)
-                        .position(point)
-                }
-            }
-        }
-        .accessibilityLabel("Fan curve preview")
-    }
-
-    private func grid(in size: CGSize) -> Path {
-        var path = Path()
-        for fraction in [0.25, 0.5, 0.75] {
-            path.move(to: CGPoint(x: 0, y: size.height * fraction))
-            path.addLine(to: CGPoint(x: size.width, y: size.height * fraction))
-        }
-        return path
-    }
-
-    private func line(in size: CGSize) -> Path {
-        var path = Path()
-        let mapped = mappedPoints(in: size)
-        guard let first = mapped.first else { return path }
-        path.move(to: first)
-        for point in mapped.dropFirst() {
-            path.addLine(to: point)
-        }
-        return path
-    }
-
-    private func mappedPoints(in size: CGSize) -> [CGPoint] {
-        let temps = points.map(\.temperature)
-        let minTemp = temps.min() ?? 30
-        let maxTemp = temps.max() ?? 90
-        return points.map { point in
-            let x = (point.temperature - minTemp) / max(maxTemp - minTemp, 1) * size.width
+        Chart(points, id: \.temperature) { point in
             let rpm = point.rpm == 0 ? minRPM : Double(point.rpm)
-            let yRatio = 1 - ((rpm - minRPM) / max(maxRPM - minRPM, 1))
-            return CGPoint(x: x, y: min(max(yRatio, 0), 1) * size.height)
+            AreaMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
+                .opacity(0.12)
+            LineMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
+                .interpolationMethod(.monotone)
+            PointMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
+                .symbolSize(30)
         }
+        .chartYScale(domain: minRPM...maxRPM)
+        .chartXAxisLabel("°C")
+        .accessibilityLabel("Fan curve preview")
     }
 }

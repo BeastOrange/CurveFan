@@ -16,9 +16,7 @@ struct SettingsPageView: View {
                 SettingsAdvancedGroup(state: state)
             }
             .padding(24)
-            .frame(maxWidth: 980, alignment: .topLeading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var isConnected: Bool {
@@ -50,7 +48,6 @@ private struct SettingsGeneralGroup: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 150)
         } label: {
             Label("General", systemImage: "gearshape")
         }
@@ -97,7 +94,6 @@ private struct SettingsHelperGroup: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 188)
         } label: {
             Label("Helper", systemImage: "bolt.horizontal")
         }
@@ -132,7 +128,6 @@ private struct SettingsAdvancedGroup: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 116)
         } label: {
             Label("Advanced", systemImage: "exclamationmark.triangle")
         }
