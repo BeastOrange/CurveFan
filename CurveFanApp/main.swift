@@ -135,6 +135,11 @@ final class AppState: ObservableObject {
     }
 
     func checkDaemon() async {
+        // First launch: install helper if not present.
+        if !HelperInstaller.isInstalled {
+            guard HelperInstaller.installIfNeeded() else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // let daemon start
+        }
         if await ipc.ping() {
             connectionStatus = .connected
             startPolling()

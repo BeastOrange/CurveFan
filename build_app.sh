@@ -23,6 +23,13 @@ cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "CurveFan/Info.plist" "$APP_DIR/Contents/Info.plist"
 chmod 755 "$APP_DIR/Contents/MacOS/$APP_NAME"
 
+# Embed the privileged helper so the app can self-install on first launch.
+HELPER_BIN=".build/${CONFIGURATION}/CurveFanHelper"
+if [ -f "$HELPER_BIN" ]; then
+    cp "$HELPER_BIN" "$APP_DIR/Contents/Resources/CurveFanHelper"
+    chmod 755 "$APP_DIR/Contents/Resources/CurveFanHelper"
+fi
+
 if [ -f "$ICON_SOURCE" ]; then
     rm -rf "$ICONSET_DIR"
     mkdir -p "$ICONSET_DIR"
