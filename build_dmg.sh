@@ -20,6 +20,14 @@ echo "Staging..."
 cp -R .build/release/CurveFan.app "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
+# Helper script: users double-click this after macOS says "app is damaged"
+cat > "$STAGING/Fix Damaged App.command" << 'EOF'
+#!/bin/bash
+xattr -rd com.apple.quarantine /Applications/CurveFan.app
+open /Applications/CurveFan.app
+EOF
+chmod +x "$STAGING/Fix Damaged App.command"
+
 echo "Creating DMG..."
 hdiutil create \
     -volname "$VOL_NAME" \
