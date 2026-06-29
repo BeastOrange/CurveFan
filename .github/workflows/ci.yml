@@ -6,13 +6,9 @@ on:
 
 jobs:
   build-test:
-    runs-on: macos-15
+    runs-on: self-hosted  # requires macOS 26 + Swift 6.4; use a local Apple Silicon runner
     steps:
       - uses: actions/checkout@v4
-
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: '6.4'
 
       - name: Swift version
         run: swift --version

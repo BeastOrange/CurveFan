@@ -5,7 +5,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: self-hosted  # requires macOS 26 + Swift 6.4; use a local Apple Silicon runner
     permissions:
       contents: write
     steps:
