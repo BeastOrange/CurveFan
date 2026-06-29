@@ -1,149 +1,134 @@
 import SwiftUI
 import CurveFanCore
 
+/// Compact header: native Gauge + RPM + status. No animations.
 struct MenuHeaderCard: View {
     let rpm: Double?
     let minRPM: Double
     let maxRPM: Double
-    let cpuText: String
-    let gpuText: String
     let controlState: MenuControlState
 
     var body: some View {
         HStack(spacing: 14) {
-            FanPulseView(rpm: rpm, maxRPM: maxRPM, tint: controlState.tint)
-                .frame(width: 92, height: 92)
+            Gauge(value: rpm ?? minRPM, in: minRPM...maxRPM) {
+                Image(systemName: "fan")
+            }
+            .gaugeStyle(.accessoryCircular)
+            .tint(controlState.tint)
+            .frame(width: 56, height: 56)
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(controlState.tint)
-                        .frame(width: 8, height: 8)
-                    Text(controlState.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                Label(controlState.title, systemImage: "circle.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(controlState.tint)
+                    .labelStyle(TintedIconLabelStyle())
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(rpm.map { "\(formatRPM($0)) RPM" } ?? "-- RPM")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                    Text(controlState.detail)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(rpm.map { "\(formatRPM($0)) RPM" } ?? "-- RPM")
+                    .font(.title2.bold().monospacedDigit())
 
-                HStack(spacing: 6) {
-                    StatusChip(icon: "thermometer", text: "CPU \(cpuText)")
-                    StatusChip(icon: "gauge.with.dots.needle.50percent", text: "\(formatRPM(minRPM))-\(formatRPM(maxRPM))")
-                }
+                Text(controlState.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(cardStroke(radius: 12))
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 }
 
-struct FanPulseView: View {
-    let rpm: Double?
+private struct TintedIconLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.font(.system(size: 8))
+            configuration.title
+        }
+    }
+}
+
+struct ManualTargetCard: View {
+    @Binding var manualRPM: Double
+    let minRPM: Double
     let maxRPM: Double
-    let tint: Color
-    @State private var angle = 0.0
-
-    private var progress: Double {
-        guard let rpm, maxRPM > 0 else { return 0 }
-        return min(max(rpm / maxRPM, 0), 1)
-    }
+    let isConnected: Bool
+    let isActive: Bool
+    let onApply: () -> Void
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(tint.opacity(0.11))
-            Circle()
-                .stroke(tint.opacity(0.18), lineWidth: 14)
-                .scaleEffect(0.78 + progress * 0.18)
-            Circle()
-                .strokeBorder(tint.opacity(0.65), lineWidth: 2)
-
-            ForEach(0..<5, id: \.self) { index in
-                Capsule(style: .continuous)
-                    .fill(tint.gradient)
-                    .frame(width: 13, height: 38 + progress * 10)
-                    .offset(y: -20)
-                    .rotationEffect(.degrees(angle + Double(index) * 72))
-                    .opacity(0.88)
-            }
-
-            Circle()
-                .fill(.thickMaterial)
-                .frame(width: 30, height: 30)
-            Image(systemName: "fan.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-        }
-        .shadow(color: tint.opacity(0.22), radius: 14, y: 6)
-        .onAppear {
-            angle = 0
-            withAnimation(.linear(duration: 1.15).repeatForever(autoreverses: false)) {
-                angle = 360
-            }
-        }
-    }
-}
-
-struct QuickMetricGrid: View {
-    let rpm: Double?
-    let rangeText: String
-    let cpuText: String
-    let gpuText: String
-    let pollingText: String
-
-    var body: some View {
-        Grid(horizontalSpacing: 8, verticalSpacing: 8) {
-            GridRow {
-                QuickMetric(title: "Current", value: rpm.map { formatRPM($0) } ?? "--", suffix: "RPM")
-                QuickMetric(title: "Range", value: rangeText, suffix: "RPM")
-            }
-            GridRow {
-                QuickMetric(title: "CPU", value: cpuText, suffix: "")
-                QuickMetric(title: "GPU", value: gpuText, suffix: "Poll \(pollingText)")
-            }
-        }
-    }
-}
-
-struct QuickMetric: View {
-    let title: String
-    let value: String
-    let suffix: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+        VStack(spacing: 8) {
+            HStack {
+                Text("Manual target")
+                    .font(.callout.weight(.semibold))
+                Spacer()
+                Text("\(formatRPM(clampedRPM)) RPM")
+                    .font(.callout.weight(.semibold))
                     .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                if !suffix.isEmpty {
-                    Text(suffix)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
+                Slider(value: clampedBinding, in: safeRange, step: 100)
+                    .disabled(!isConnected)
+                Button(isActive ? "Update" : "Apply", action: onApply)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(!isConnected)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-        .padding(.horizontal, 11)
-        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var safeRange: ClosedRange<Double> {
+        guard minRPM < maxRPM else { return 0...1 }
+        return minRPM...maxRPM
+    }
+
+    private var clampedRPM: Double {
+        guard minRPM < maxRPM else { return minRPM }
+        return min(max(manualRPM, minRPM), maxRPM)
+    }
+
+    private var clampedBinding: Binding<Double> {
+        Binding(
+            get: { clampedRPM },
+            set: { manualRPM = $0 }
+        )
+    }
+}
+
+struct FooterToolbar: View {
+    let onOpenWindow: () -> Void
+    let onSettings: () -> Void
+    let onRestoreAuto: () -> Void
+    let onQuit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onOpenWindow) {
+                Label("Window", systemImage: "macwindow")
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: onSettings) {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.borderless)
+
+            Spacer()
+
+            Button(action: onRestoreAuto) {
+                Label("Restore Auto", systemImage: "arrow.counterclockwise")
+            }
+            .buttonStyle(.borderless)
+
+            Button(role: .destructive, action: onQuit) {
+                Label("Quit", systemImage: "power")
+            }
+            .buttonStyle(.borderless)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }

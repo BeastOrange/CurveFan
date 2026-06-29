@@ -17,7 +17,7 @@ struct CurveFanApp: App {
 
         MenuBarExtra {
             MainView(state: state)
-                .frame(width: 372, height: 520)
+                .frame(width: 372)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     Task { await state.restoreAutoForShutdown() }
                 }

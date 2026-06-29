@@ -41,13 +41,11 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity)
 
                     PreferencesGroup(state: state)
-                        .frame(width: 340)
+                        .frame(minWidth: 260, maxWidth: 340)
                 }
             }
             .padding(24)
-            .frame(maxWidth: 1180, alignment: .topLeading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var fanInfo: FanInfo? {
@@ -124,7 +122,7 @@ struct OverviewSummaryGroup: View {
                             ("Poll", pollingText)
                         ]
                     )
-                    .frame(width: 220)
+                    .frame(maxWidth: 200)
                 }
             }
             .padding(6)
