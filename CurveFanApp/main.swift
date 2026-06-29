@@ -12,25 +12,11 @@ struct CurveFanApp: App {
             AppWindowView(state: state)
                 .frame(minWidth: 1180, minHeight: 720)
                 .background(MainWindowLifecycle())
+                // Capture openWindow action and set up status item once.
+                .background(OpenWindowCapture())
+                .task { appDelegate.setupStatusItem(state: state) }
         }
         .defaultSize(width: 1280, height: 760)
-
-        MenuBarExtra {
-            MainView(state: state)
-                .frame(width: 372)
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                    Task { await state.restoreAutoForShutdown() }
-                }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: state.isCurveFanControlActive ? "fan.fill" : "fan")
-                if state.showMenuBarRPM, let rpm = state.fanInfo[0]?.actualRPM {
-                    Text("\(formatRPM(rpm)) RPM")
-                        .monospacedDigit()
-                }
-            }
-        }
-        .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView(state: state)
@@ -40,6 +26,8 @@ struct CurveFanApp: App {
 
 @MainActor
 final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
+    private var statusItemController: StatusItemController?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -47,6 +35,23 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// Called from the WindowGroup .task once AppState is ready.
+    func setupStatusItem(state: AppState) {
+        guard statusItemController == nil else { return }
+        statusItemController = StatusItemController(state: state)
+    }
+}
+
+/// Captures the SwiftUI openWindow action into a global so NSHostingView-hosted
+/// views (the menu bar panel) can open the main window without an Environment.
+private struct OpenWindowCapture: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Color.clear.onAppear {
+            curveFanOpenWindow = { id in openWindow(id: id) }
+        }
     }
 }
 
