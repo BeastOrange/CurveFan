@@ -13,7 +13,7 @@ struct AppWindowView: View {
             )
         } detail: {
             detailView
-                .navigationTitle(selectedSection?.title ?? "FanFlow")
+                .navigationTitle(selectedSection?.title ?? "CurveFan")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
@@ -65,7 +65,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .overview: return "FanFlow"
+        case .overview: return "CurveFan"
         case .fans: return "Fans"
         case .sensors: return "Sensors"
         case .presets: return "Presets"
@@ -79,7 +79,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .fans: return "Fan control and hardware status"
         case .sensors: return "Active macOS SMC readings"
         case .presets: return "Fan curve preset management"
-        case .settings: return "FanFlow system behavior"
+        case .settings: return "CurveFan system behavior"
         }
     }
 
@@ -113,7 +113,7 @@ struct SidebarList: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("FanFlow")
+        .navigationTitle("CurveFan")
         .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         .safeAreaInset(edge: .bottom) {
             SidebarStatus(isConnected: isConnected)

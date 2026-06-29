@@ -214,7 +214,7 @@ private struct CurvePreviewGroup: View {
                 }
                 .padding(6)
             } else {
-                Text("System Auto has no FanFlow curve preview.")
+                Text("System Auto has no CurveFan curve preview.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(6)

@@ -7,7 +7,7 @@ struct SettingsPageView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 PageHeader(
-                    subtitle: "FanFlow system behavior",
+                    subtitle: "CurveFan system behavior",
                     isConnected: isConnected
                 )
 
@@ -125,7 +125,7 @@ private struct SettingsAdvancedGroup: View {
 
                 HStack {
                     Spacer()
-                    Button("Quit FanFlow", role: .destructive) {
+                    Button("Quit CurveFan", role: .destructive) {
                         state.quitAfterRestoringAuto()
                     }
                 }

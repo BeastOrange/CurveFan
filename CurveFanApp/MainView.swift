@@ -33,7 +33,7 @@ struct MainView: View {
                 onSystemAuto: {
                     Task { await state.restoreAuto() }
                 },
-                onFanFlow: {
+                onCurveFan: {
                     guard let preset = preferredCurvePreset else { return }
                     Task { await state.applyPreset(preset) }
                 }
@@ -190,8 +190,8 @@ enum MenuControlState: Equatable {
         switch self {
         case .offline: return "Helper offline"
         case .system: return "macOS has control"
-        case .curve: return "FanFlow curve active"
-        case .manual: return "FanFlow manual override"
+        case .curve: return "CurveFan curve active"
+        case .manual: return "CurveFan manual override"
         case .externalManual: return "Manual mode detected"
         }
     }
@@ -206,7 +206,7 @@ enum MenuControlState: Equatable {
         }
     }
 
-    var isFanFlowControl: Bool {
+    var isCurveFanControl: Bool {
         switch self {
         case .curve, .manual: return true
         case .offline, .system, .externalManual: return false

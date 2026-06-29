@@ -5,7 +5,7 @@ struct ControlModeChooser: View {
     let controlState: MenuControlState
     let curveName: String
     let onSystemAuto: () -> Void
-    let onFanFlow: () -> Void
+    let onCurveFan: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -18,12 +18,12 @@ struct ControlModeChooser: View {
                 action: onSystemAuto
             )
             ChoiceButton(
-                title: "FanFlow Control",
+                title: "CurveFan Control",
                 subtitle: "\(curveName) curve",
                 icon: "waveform.path.ecg",
-                isSelected: controlState.isFanFlowControl,
+                isSelected: controlState.isCurveFanControl,
                 tint: .blue,
-                action: onFanFlow
+                action: onCurveFan
             )
         }
     }
@@ -114,7 +114,7 @@ struct ManualTargetCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Manual target")
                         .font(.system(size: 13, weight: .semibold))
-                    Text(isActive ? "Fixed RPM is active" : "Applies FanFlow manual override")
+                    Text(isActive ? "Fixed RPM is active" : "Applies CurveFan manual override")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
