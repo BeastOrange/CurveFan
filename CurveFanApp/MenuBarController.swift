@@ -15,8 +15,7 @@ final class StatusPanel: NSPanel {
 }
 
 /// Self-managed menu bar item + popover panel, replacing MenuBarExtra(.window).
-/// The panel sets `sharingType = .readWrite` so window-mode screenshot tools
-/// can capture it, which MenuBarExtra(.window) does not allow.
+/// sharingType = .readOnly allows window-mode screenshot tools to capture it.
 @MainActor
 final class StatusItemController: NSObject {
     private let state: AppState
@@ -47,7 +46,7 @@ final class StatusItemController: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = .popUpMenu
-        panel.sharingType = .readWrite
+        panel.sharingType = .readOnly
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

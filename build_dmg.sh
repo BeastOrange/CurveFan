@@ -21,7 +21,7 @@ cp -R .build/release/CurveFan.app "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
 echo "Creating DMG..."
-hdiutil create -megabytes 120 -volname "$VOL_NAME" -fs HFS+ -o "$TMP_DMG"
+hdiutil create -megabytes 120 -volname "$VOL_NAME" -fs HFS+ -ov -o "$TMP_DMG"
 hdiutil attach "$TMP_DMG" -mountpoint "/Volumes/$VOL_NAME" -noautoopen -quiet
 cp -R "$STAGING/CurveFan.app"  "/Volumes/$VOL_NAME/"
 ln -s /Applications             "/Volumes/$VOL_NAME/Applications"
