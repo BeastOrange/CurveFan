@@ -1,0 +1,41 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build release
+        run: |
+          swift build -c release
+          bash build_app.sh release
+
+      - name: Package DMG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGING="$(mktemp -d)"
+          cp -R .build/release/CurveFan.app "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create \
+            -volname "CurveFan" \
+            -srcfolder "$STAGING" \
+            -ov -format UDZO \
+            "CurveFan-${VERSION}.dmg"
+          echo "DMG_PATH=CurveFan-${VERSION}.dmg" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CurveFan ${{ env.VERSION }}
+          files: ${{ env.DMG_PATH }}
+          generate_release_notes: true
