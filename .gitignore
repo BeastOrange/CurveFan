@@ -17,3 +17,4 @@ build_dmg.sh
 install.sh
 dmgbuild_settings.py
 docs/安装说明.txt
+docs/dmg-background.png
