@@ -135,6 +135,7 @@ struct RPMTrendChart: View {
                 x: .value("Time", point.index),
                 y: .value("RPM", point.rpm)
             )
+            .interpolationMethod(.catmullRom)
             .opacity(0.12)
             LineMark(
                 x: .value("Time", point.index),

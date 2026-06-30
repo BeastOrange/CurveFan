@@ -2,13 +2,13 @@ import XCTest
 @testable import CurveFanCore
 
 final class FanCurveTests: XCTestCase {
-    func testLinearInterpolation() {
+    func testTwoPointCurveFallsBackToLinearSegment() {
         let curve = FanCurve(points: [
             CurvePoint(temperature: 30, rpm: 1200),
             CurvePoint(temperature: 80, rpm: 5000)
         ])
-        let rpm = curve.rpm(for: 55)
-        XCTAssertEqual(rpm, 3100)
+        XCTAssertEqual(curve.rpm(for: 42.5), 2150, accuracy: 2)
+        XCTAssertEqual(curve.rpm(for: 67.5), 4050, accuracy: 2)
     }
 
     func testInterpolationAtLowerBound() {
@@ -90,16 +90,44 @@ final class FanCurveTests: XCTestCase {
         XCTAssert(errors.contains { $0.contains("at least 2 points") })
     }
 
-    func testCurveWithMultipleSegments() {
+    func testCurveWithMultiplePointsUsesContinuousMonotoneCubic() {
         let curve = FanCurve(points: [
             CurvePoint(temperature: 30, rpm: 1200),
             CurvePoint(temperature: 50, rpm: 2500),
             CurvePoint(temperature: 70, rpm: 4000),
             CurvePoint(temperature: 90, rpm: 6000)
         ])
-        XCTAssertEqual(curve.rpm(for: 40), 1850, accuracy: 10)
-        XCTAssertEqual(curve.rpm(for: 60), 3250, accuracy: 10)
-        XCTAssertEqual(curve.rpm(for: 80), 5000, accuracy: 10)
+        XCTAssertEqual(curve.rpm(for: 40), 1831, accuracy: 10)
+        XCTAssertEqual(curve.rpm(for: 60), 3206, accuracy: 10)
+        XCTAssertEqual(curve.rpm(for: 80), 4969, accuracy: 10)
+    }
+
+    func testValidateRejectsDescendingRPM() {
+        let curve = FanCurve(points: [
+            CurvePoint(temperature: 30, rpm: 3000),
+            CurvePoint(temperature: 60, rpm: 2000)
+        ])
+        let errors = curve.validate(rpmRange: 1000...5000)
+        XCTAssert(errors.contains { $0.contains("RPM must not decrease") })
+        XCTAssertFalse(curve.isValid)
+    }
+
+    func testRateLimiterMovesTowardTargetByIntervalBudget() {
+        XCTAssertEqual(
+            FanCurve.rateLimitedRPM(current: 1200, target: 5000, interval: 2, maxRPMChangePerSecond: 600),
+            2400
+        )
+        XCTAssertEqual(
+            FanCurve.rateLimitedRPM(current: 5000, target: 1200, interval: 2, maxRPMChangePerSecond: 600),
+            3800
+        )
+    }
+
+    func testRateLimiterSnapsWhenTargetWithinBudget() {
+        XCTAssertEqual(
+            FanCurve.rateLimitedRPM(current: 2000, target: 2500, interval: 2, maxRPMChangePerSecond: 600),
+            2500
+        )
     }
 
     func testCurveCodable() throws {

@@ -27,6 +27,7 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
         guard points.count >= 2 else { return false }
         for i in 1..<points.count {
             if points[i].temperature <= points[i - 1].temperature { return false }
+            if points[i].rpm < points[i - 1].rpm { return false }
         }
         return true
     }
@@ -42,8 +43,7 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
             let a = points[i]
             let b = points[i + 1]
             if temperature >= a.temperature && temperature <= b.temperature {
-                let ratio = (temperature - a.temperature) / (b.temperature - a.temperature)
-                return Int(Double(a.rpm) + ratio * Double(b.rpm - a.rpm))
+                return Int(Self.monotoneCubicValue(points: points, segmentIndex: i, temperature: temperature).rounded())
             }
         }
         return points.last!.rpm
@@ -53,6 +53,18 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
         let computed = rpm(for: temperature)
         if computed == 0 { return 0 }
         return max(minRPM, min(maxRPM, computed))
+    }
+
+    public static func rateLimitedRPM(
+        current: Int,
+        target: Int,
+        interval: TimeInterval,
+        maxRPMChangePerSecond: Int
+    ) -> Int {
+        let delta = target - current
+        let maxChange = max(1, Int((Double(maxRPMChangePerSecond) * interval).rounded()))
+        if abs(delta) <= maxChange { return target }
+        return current + (delta > 0 ? maxChange : -maxChange)
     }
 
     public func validate(rpmRange: ClosedRange<Int>) -> [String] {
@@ -66,6 +78,10 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
                 errors.append("Points must be in ascending temperature order")
                 break
             }
+            if points[i].rpm < points[i - 1].rpm {
+                errors.append("RPM must not decrease as temperature rises")
+                break
+            }
         }
         for (i, point) in points.enumerated() {
             if point.temperature < 0 || point.temperature > 120 {
@@ -76,6 +92,56 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
             }
         }
         return errors
+    }
+
+    private static func monotoneCubicValue(points: [CurvePoint], segmentIndex: Int, temperature: Double) -> Double {
+        let x = points.map(\.temperature)
+        let y = points.map { Double($0.rpm) }
+        let slopes = monotoneTangents(x: x, y: y)
+        let h = x[segmentIndex + 1] - x[segmentIndex]
+        guard h > 0 else { return y[segmentIndex] }
+        let t = (temperature - x[segmentIndex]) / h
+        let t2 = t * t
+        let t3 = t2 * t
+        let h00 = 2 * t3 - 3 * t2 + 1
+        let h10 = t3 - 2 * t2 + t
+        let h01 = -2 * t3 + 3 * t2
+        let h11 = t3 - t2
+        return h00 * y[segmentIndex]
+            + h10 * h * slopes[segmentIndex]
+            + h01 * y[segmentIndex + 1]
+            + h11 * h * slopes[segmentIndex + 1]
+    }
+
+    private static func monotoneTangents(x: [Double], y: [Double]) -> [Double] {
+        guard x.count > 2 else {
+            let slope = x.count == 2 ? (y[1] - y[0]) / (x[1] - x[0]) : 0
+            return Array(repeating: slope, count: x.count)
+        }
+        let delta = (0..<(x.count - 1)).map { index in
+            (y[index + 1] - y[index]) / (x[index + 1] - x[index])
+        }
+        var tangents = Array(repeating: 0.0, count: x.count)
+        tangents[0] = delta[0]
+        tangents[x.count - 1] = delta[delta.count - 1]
+        for index in 1..<(x.count - 1) {
+            tangents[index] = (delta[index - 1] + delta[index]) / 2
+        }
+        for index in 0..<delta.count where delta[index] == 0 {
+            tangents[index] = 0
+            tangents[index + 1] = 0
+        }
+        for index in 0..<delta.count where delta[index] != 0 {
+            let a = tangents[index] / delta[index]
+            let b = tangents[index + 1] / delta[index]
+            let length = hypot(a, b)
+            if length > 3 {
+                let scale = 3 / length
+                tangents[index] = scale * a * delta[index]
+                tangents[index + 1] = scale * b * delta[index]
+            }
+        }
+        return tangents
     }
 }
 

@@ -133,6 +133,8 @@ final class AppState: ObservableObject {
     /// Active fan curve driven by the poll loop, keyed by fan index. Empty when
     /// no preset curve is running.
     private var activeCurves: [Int: (curve: FanCurve, sensorKey: String)] = [:]
+    private var curveTargetRPMs: [Int: Int] = [:]
+    private let maxCurveRPMChangePerSecond = 600
 
     init() {
         presetCancellable = PresetManager.shared.objectWillChange
@@ -196,9 +198,21 @@ final class AppState: ObservableObject {
                 continue
             }
             let target = entry.curve.rpm(for: temp, minRPM: Int(info.minRPM), maxRPM: Int(info.maxRPM))
-            guard target > 0 else { continue }
+            guard target > 0 else {
+                curveTargetRPMs[fan] = nil
+                await controller.restoreAutoLogging(fan)
+                continue
+            }
+            let current = curveTargetRPMs[fan] ?? Int(info.actualRPM)
+            let limitedTarget = FanCurve.rateLimitedRPM(
+                current: current,
+                target: target,
+                interval: pollingInterval,
+                maxRPMChangePerSecond: maxCurveRPMChangePerSecond
+            )
             do {
-                try await controller.unlockAndSetRPM(fan, rpm: target)
+                try await controller.unlockAndSetRPM(fan, rpm: limitedTarget)
+                curveTargetRPMs[fan] = limitedTarget
             } catch {
                 NSLog("CurveFan curve control failed: \(error.localizedDescription)")
             }
@@ -221,6 +235,7 @@ final class AppState: ObservableObject {
         do {
             try await controller.unlockAndSetRPM(fan, rpm: Int(rpm))
             activeCurves[fan] = nil
+            curveTargetRPMs[fan] = nil
             manualFanIDs.insert(fan)
             isManualMode = true
             if fan == 0 {
@@ -243,6 +258,7 @@ final class AppState: ObservableObject {
 
     func restoreAuto(fan: Int) async {
         activeCurves[fan] = nil
+        curveTargetRPMs[fan] = nil
         manualFanIDs.remove(fan)
         isManualMode = !manualFanIDs.isEmpty
         if fan == 0 {
@@ -260,6 +276,7 @@ final class AppState: ObservableObject {
         isManualMode = false
         manualFanIDs.removeAll()
         activeCurves.removeAll()
+        curveTargetRPMs.removeAll()
         activePreset = .auto
         for fan in 0..<knownFanCount {
             await controller.restoreAutoLogging(fan)
@@ -295,6 +312,7 @@ final class AppState: ObservableObject {
             }
             manualFanIDs.remove(fan)
             activeCurves[fan] = (curve: curve, sensorKey: sensorKey)
+            curveTargetRPMs[fan] = nil
         }
         isManualMode = !manualFanIDs.isEmpty
     }

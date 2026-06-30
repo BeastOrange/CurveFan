@@ -586,9 +586,11 @@ private struct CurveEditorView: View {
     private func drawCurve(context: GraphicsContext, rect: CGRect) {
         let sorted = sortedPoints
         guard let first = sorted.first else { return }
+        let curve = FanCurve(points: sorted)
+        let samples = sampledCurvePoints(for: curve)
         var path = Path()
         path.move(to: pointPosition(first, rect: rect))
-        for point in sorted.dropFirst() {
+        for point in samples.dropFirst() {
             path.addLine(to: pointPosition(point, rect: rect))
         }
         context.stroke(path, with: .color(.accentColor), lineWidth: 2.5)
@@ -613,9 +615,10 @@ private struct CurveEditorView: View {
         var sorted = sortedPoints
         guard sorted.indices.contains(index) else { return }
         let rect = plotRect(size: size)
+        let temperature = clampedTemperature(at: index, location: location, rect: rect, points: sorted)
         sorted[index] = CurvePoint(
-            temperature: clampedTemperature(at: index, location: location, rect: rect, points: sorted),
-            rpm: rpm(at: location.y, rect: rect)
+            temperature: temperature,
+            rpm: clampedRPM(at: index, proposed: rpm(at: location.y, rect: rect), points: sorted)
         )
         points = sorted
     }
@@ -625,7 +628,7 @@ private struct CurveEditorView: View {
         guard previous.count < 12 else { return }
         let midTemp = midpointOfWidestGap(in: previous) ?? 60
         guard canInsertTemperature(midTemp, into: previous) else { return }
-        let midRPM = Int((minRPM + maxRPM) / 2)
+        let midRPM = FanCurve(points: previous).rpm(for: midTemp, minRPM: Int(minRPM), maxRPM: Int(maxRPM))
         points = (previous + [CurvePoint(temperature: midTemp, rpm: midRPM)])
             .sorted { $0.temperature < $1.temperature }
         selectedIndex = points.firstIndex { $0.temperature == midTemp && $0.rpm == midRPM }
@@ -636,8 +639,13 @@ private struct CurveEditorView: View {
         let rect = plotRect(size: size)
         let temperature = temp(at: location.x, rect: rect)
         guard canInsertTemperature(temperature, into: sortedPoints) else { return }
-        let point = CurvePoint(temperature: temperature, rpm: rpm(at: location.y, rect: rect))
-        points = (sortedPoints + [point]).sorted { $0.temperature < $1.temperature }
+        var updated = (sortedPoints + [CurvePoint(temperature: temperature, rpm: rpm(at: location.y, rect: rect))])
+            .sorted { $0.temperature < $1.temperature }
+        if let index = updated.firstIndex(where: { $0.temperature == temperature }) {
+            updated[index].rpm = clampedRPM(at: index, proposed: updated[index].rpm, points: updated)
+        }
+        guard let point = updated.first(where: { $0.temperature == temperature }) else { return }
+        points = updated
         selectedIndex = points.firstIndex { $0.temperature == point.temperature && $0.rpm == point.rpm }
     }
 
@@ -687,6 +695,23 @@ private struct CurveEditorView: View {
         return min(max(temp(at: location.x, rect: rect), lower), max(lower, upper))
     }
 
+    private func clampedRPM(at index: Int, proposed: Int, points: [CurvePoint]) -> Int {
+        let lower = index == 0 ? Int(minRPM) : points[index - 1].rpm
+        let upper = index == points.count - 1 ? Int(maxRPM) : points[index + 1].rpm
+        return min(max(proposed, lower), max(lower, upper))
+    }
+
+    private func sampledCurvePoints(for curve: FanCurve) -> [CurvePoint] {
+        guard let first = curve.points.first, let last = curve.points.last else { return [] }
+        let lower = Int(first.temperature.rounded(.down))
+        let upper = Int(last.temperature.rounded(.up))
+        let temperatures = stride(from: lower, through: upper, by: 1).map(Double.init)
+        let samples = temperatures.map { temp in
+            CurvePoint(temperature: temp, rpm: curve.rpm(for: temp, minRPM: Int(minRPM), maxRPM: Int(maxRPM)))
+        }
+        return uniqueCurvePoints(samples + [first, last])
+    }
+
     private func temp(at x: CGFloat, rect: CGRect) -> Double {
         let ratio = min(max((x - rect.minX) / max(rect.width, 1), 0), 1)
         return tempRange.lowerBound + Double(ratio) * (tempRange.upperBound - tempRange.lowerBound)
@@ -733,7 +758,7 @@ private struct CurvePreviewGroup: View {
                     Text("Temperature response - Celsius")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    CurvePreview(points: curve.points, minRPM: minRPM, maxRPM: maxRPM)
+                    CurvePreview(curve: curve, minRPM: minRPM, maxRPM: maxRPM)
                         .frame(height: 170)
                 }
                 .padding(6)
@@ -750,21 +775,62 @@ private struct CurvePreviewGroup: View {
 }
 
 private struct CurvePreview: View {
-    let points: [CurvePoint]
+    let curve: FanCurve
     let minRPM: Double
     let maxRPM: Double
 
     var body: some View {
-        Chart(points, id: \.temperature) { point in
-            let rpm = point.rpm == 0 ? minRPM : Double(point.rpm)
-            AreaMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
-                .opacity(0.12)
-            LineMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
-            PointMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
-                .symbolSize(30)
+        Chart {
+            ForEach(sampledPoints, id: \.temperature) { point in
+                AreaMark(
+                    x: .value("Temp", point.temperature),
+                    yStart: .value("Min RPM", chartMinRPM),
+                    yEnd: .value("RPM", displayRPM(point.rpm))
+                )
+                    .opacity(0.12)
+                LineMark(x: .value("Temp", point.temperature), y: .value("RPM", displayRPM(point.rpm)))
+            }
+            ForEach(curve.points, id: \.temperature) { point in
+                PointMark(x: .value("Temp", point.temperature), y: .value("RPM", displayRPM(point.rpm)))
+                    .symbolSize(30)
+            }
         }
-        .chartYScale(domain: minRPM...maxRPM)
+        .chartYScale(domain: chartMinRPM...maxRPM)
         .chartXAxisLabel("°C")
         .accessibilityLabel("Fan curve preview")
     }
+
+    private var chartMinRPM: Double {
+        minRPM
+    }
+
+    private func displayRPM(_ rpm: Int) -> Double {
+        if rpm == 0 { return chartMinRPM }
+        return min(max(Double(rpm), chartMinRPM), maxRPM)
+    }
+
+    private var sampledPoints: [CurvePoint] {
+        guard let first = curve.points.first, let last = curve.points.last else { return [] }
+        let lower = Int(first.temperature.rounded(.down))
+        let upper = Int(last.temperature.rounded(.up))
+        let samples = stride(from: lower, through: upper, by: 1).map { value in
+            let temp = Double(value)
+            return CurvePoint(
+                temperature: temp,
+                rpm: curve.rpm(for: temp, minRPM: Int(minRPM), maxRPM: Int(maxRPM))
+            )
+        }
+        return uniqueCurvePoints(samples + [first, last])
+            .map { point in
+                CurvePoint(temperature: point.temperature, rpm: Int(displayRPM(point.rpm).rounded()))
+            }
+    }
+}
+
+private func uniqueCurvePoints(_ points: [CurvePoint]) -> [CurvePoint] {
+    var unique: [Double: CurvePoint] = [:]
+    for point in points {
+        unique[point.temperature] = point
+    }
+    return unique.values.sorted { $0.temperature < $1.temperature }
 }
