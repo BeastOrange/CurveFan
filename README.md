@@ -1,14 +1,15 @@
 <div align="center">
   <img src="CurveFan/Assets/AppIcon.png" width="128" height="128" alt="CurveFan">
 
-  # CurveFan
+# CurveFan
 
-  **Native macOS fan speed monitor and controller for Apple Silicon**
+**Native macOS fan speed monitor and controller for Apple Silicon**
 
-  ![Swift](https://img.shields.io/badge/Swift-6.4-F05138?logo=swift&logoColor=white)
-  ![macOS](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)
-  ![Platform](https://img.shields.io/badge/Apple_Silicon-M1--M5-8A2BE2)
-  ![License](https://img.shields.io/badge/License-MIT-22c55e)
+![Swift](https://img.shields.io/badge/Swift-6.4-F05138?logo=swift&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)
+![Platform](https://img.shields.io/badge/Apple_Silicon-M1--M5-8A2BE2)
+![License](https://img.shields.io/badge/License-MIT-22c55e)
+
 </div>
 
 <div align="center">
@@ -22,7 +23,7 @@ English | [简体中文](README-zh.md)
 <div align="center">
   <img src="docs/screenshot-menubar.png" width="320" alt="Menu bar panel">
   &nbsp;&nbsp;
-  <img src="docs/screenshot-main.png" width="580" alt="Main window">
+  <img src="docs/screenshot-main-preset.png" width="580" alt="Main window">
 </div>
 
 ---
@@ -33,15 +34,15 @@ CurveFan sits in your menu bar and gives you direct control over fan speed throu
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Language | Swift 6.4 (strict concurrency) |
-| UI | SwiftUI + AppKit (NSStatusItem / NSPanel) |
-| Charts | Swift Charts — RPM trend, fan curve preview |
-| Hardware | IOKit `AppleSMC` — helper-side only |
-| IPC | Unix socket · JSON · 4-byte length-prefixed framing |
-| Build | Swift Package Manager |
-| Tests | XCTest · no hardware required |
+| Layer    | Technology                                          |
+| -------- | --------------------------------------------------- |
+| Language | Swift 6.4 (strict concurrency)                      |
+| UI       | SwiftUI + AppKit (NSStatusItem / NSPanel)           |
+| Charts   | Swift Charts — RPM trend, fan curve preview         |
+| Hardware | IOKit `AppleSMC` — helper-side only                 |
+| IPC      | Unix socket · JSON · 4-byte length-prefixed framing |
+| Build    | Swift Package Manager                               |
+| Tests    | XCTest · no hardware required                       |
 
 ## Features
 

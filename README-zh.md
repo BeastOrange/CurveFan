@@ -1,14 +1,15 @@
 <div align="center">
   <img src="CurveFan/Assets/AppIcon.png" width="128" height="128" alt="CurveFan">
 
-  # CurveFan
+# CurveFan
 
-  **原生 macOS Apple Silicon 风扇转速监控与控制器**
+**原生 macOS Apple Silicon 风扇转速监控与控制器**
 
-  ![Swift](https://img.shields.io/badge/Swift-6.4-F05138?logo=swift&logoColor=white)
-  ![macOS](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)
-  ![Platform](https://img.shields.io/badge/Apple_Silicon-M1--M5-8A2BE2)
-  ![License](https://img.shields.io/badge/License-MIT-22c55e)
+![Swift](https://img.shields.io/badge/Swift-6.4-F05138?logo=swift&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)
+![Platform](https://img.shields.io/badge/Apple_Silicon-M1--M5-8A2BE2)
+![License](https://img.shields.io/badge/License-MIT-22c55e)
+
 </div>
 
 <div align="center">
@@ -22,7 +23,7 @@
 <div align="center">
   <img src="docs/screenshot-menubar.png" width="320" alt="菜单栏面板">
   &nbsp;&nbsp;
-  <img src="docs/screenshot-main.png" width="580" alt="主窗口">
+  <img src="docs/screenshot-main-preset.png" width="580" alt="主窗口">
 </div>
 
 ---
@@ -33,15 +34,15 @@ CurveFan 是一款运行在菜单栏的原生 macOS 应用，通过 SMC 直接�
 
 ## 技术栈
 
-| 层级 | 技术 |
-|---|---|
-| 语言 | Swift 6.4（严格并发模型） |
-| UI | SwiftUI + AppKit（NSStatusItem / NSPanel） |
-| 图表 | Swift Charts — RPM 趋势图、风扇曲线预览 |
-| 硬件 | IOKit `AppleSMC` — 仅在 Helper 进程中使用 |
-| 进程通信 | Unix socket · JSON · 4 字节长度前缀帧 |
-| 构建 | Swift Package Manager |
-| 测试 | XCTest · 无需真实硬件 |
+| 层级     | 技术                                       |
+| -------- | ------------------------------------------ |
+| 语言     | Swift 6.4（严格并发模型）                  |
+| UI       | SwiftUI + AppKit（NSStatusItem / NSPanel） |
+| 图表     | Swift Charts — RPM 趋势图、风扇曲线预览    |
+| 硬件     | IOKit `AppleSMC` — 仅在 Helper 进程中使用  |
+| 进程通信 | Unix socket · JSON · 4 字节长度前缀帧      |
+| 构建     | Swift Package Manager                      |
+| 测试     | XCTest · 无需真实硬件                      |
 
 ## 功能
 
