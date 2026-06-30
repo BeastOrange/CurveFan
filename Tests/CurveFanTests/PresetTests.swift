@@ -45,9 +45,63 @@ final class PresetTests: XCTestCase {
         XCTAssertEqual(decoded.fanToSensor[0], "Tp01")
     }
 
+    func testCustomPresetCodablePreservesMultipleFans() throws {
+        let curve = FanCurve(name: "Shared", points: [
+            CurvePoint(temperature: 30, rpm: 1200),
+            CurvePoint(temperature: 90, rpm: 6000)
+        ], sensorKey: "TC0P")
+        let preset = Preset(
+            name: "Dual Fan",
+            fanToCurve: [0: curve, 1: curve],
+            fanToSensor: [0: "TC0P", 1: "TC0P"]
+        )
+
+        let data = try JSONEncoder().encode(preset)
+        let decoded = try JSONDecoder().decode(Preset.self, from: data)
+
+        XCTAssertEqual(decoded.fanToCurve.count, 2)
+        XCTAssertEqual(decoded.fanToCurve[0]?.points, curve.points)
+        XCTAssertEqual(decoded.fanToCurve[1]?.sensorKey, "TC0P")
+        XCTAssertEqual(decoded.fanToSensor[1], "TC0P")
+    }
+
+    func testPresetManagerLoadAllEmptyDirectoryDoesNotIncludeDefaults() throws {
+        let directory = try makeTemporaryPresetDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let manager = PresetManager(presetsDir: directory)
+
+        XCTAssertTrue(manager.presets.isEmpty)
+        XCTAssertEqual(manager.defaults.count, 4)
+    }
+
+    func testPresetManagerSaveAndLoadCustomPreset() throws {
+        let directory = try makeTemporaryPresetDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let preset = Preset(name: "Custom", fanToCurve: [
+            0: FanCurve(points: [
+                CurvePoint(temperature: 30, rpm: 1200),
+                CurvePoint(temperature: 90, rpm: 6000)
+            ], sensorKey: "TC0P")
+        ], fanToSensor: [0: "TC0P"])
+
+        let manager = PresetManager(presetsDir: directory)
+        try manager.save(preset)
+        let reloaded = PresetManager(presetsDir: directory)
+
+        XCTAssertEqual(reloaded.presets, [preset])
+    }
+
     func testPresetIdsAreUnique() {
         let a = Preset(name: "A")
         let b = Preset(name: "B")
         XCTAssertNotEqual(a.id, b.id)
+    }
+
+    private func makeTemporaryPresetDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CurveFanTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 }

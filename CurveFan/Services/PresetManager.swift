@@ -5,18 +5,19 @@ public final class PresetManager: ObservableObject, @unchecked Sendable {
 
     @Published public var presets: [Preset] = []
 
-    private let presetsDir: URL = {
-        let base = FileManager.default.homeDirectoryForCurrentUser
+    private let presetsDir: URL
+
+    public init(presetsDir: URL? = nil) {
+        let base = presetsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/CurveFan/presets")
         do {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         } catch {
             NSLog("CurveFan preset directory creation failed: \(error.localizedDescription)")
         }
-        return base
-    }()
-
-    public init() { loadAll() }
+        self.presetsDir = base
+        loadAll()
+    }
 
     public func save(_ preset: Preset) throws {
         let data = try JSONEncoder().encode(preset)
@@ -41,7 +42,7 @@ public final class PresetManager: ObservableObject, @unchecked Sendable {
             files = try FileManager.default.contentsOfDirectory(at: presetsDir, includingPropertiesForKeys: nil)
         } catch {
             NSLog("CurveFan preset listing failed: \(error.localizedDescription)")
-            presets = defaults
+            presets = []
             return
         }
         let loaded = files.compactMap { url -> Preset? in
@@ -53,7 +54,7 @@ public final class PresetManager: ObservableObject, @unchecked Sendable {
                 return nil
             }
         }
-        presets = loaded.isEmpty ? defaults : loaded
+        presets = loaded.sorted { $0.createdAt < $1.createdAt }
     }
 
     public var defaults: [Preset] {

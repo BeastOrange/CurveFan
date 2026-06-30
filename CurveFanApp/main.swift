@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import CurveFanCore
 
 @main
@@ -128,11 +129,15 @@ final class AppState: ObservableObject {
     private let controller = FanController.shared
     private let ipc = IPCClient.shared
     private var pollTask: Task<Void, Never>?
+    private var presetCancellable: AnyCancellable?
     /// Active fan curve driven by the poll loop, keyed by fan index. Empty when
     /// no preset curve is running.
     private var activeCurves: [Int: (curve: FanCurve, sensorKey: String)] = [:]
 
     init() {
+        presetCancellable = PresetManager.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
         Task { await checkDaemon() }
     }
 
@@ -230,7 +235,10 @@ final class AppState: ObservableObject {
     }
 
     func restoreAuto() async {
-        await restoreAuto(fan: 0)
+        for fan in 0..<knownFanCount {
+            await restoreAuto(fan: fan)
+        }
+        activePreset = .auto
     }
 
     func restoreAuto(fan: Int) async {
@@ -271,15 +279,24 @@ final class AppState: ObservableObject {
             await restoreAuto()
             return
         }
-        guard let curve = preset.fanToCurve[0] else { return }
-        let sensorKey = preset.fanToSensor[0] ?? curve.sensorKey
-        guard !sensorKey.isEmpty else {
+        guard let fallbackCurve = preset.fanToCurve[0] else { return }
+        let fallbackSensorKey = preset.fanToSensor[0] ?? fallbackCurve.sensorKey
+        guard !fallbackSensorKey.isEmpty else {
             connectionStatus = .error("No readable temperature sensor for preset")
             return
         }
-        manualFanIDs.remove(0)
+
+        for fan in 0..<knownFanCount {
+            let curve = preset.fanToCurve[fan] ?? fallbackCurve
+            let sensorKey = preset.fanToSensor[fan] ?? curve.sensorKey
+            guard !sensorKey.isEmpty else {
+                connectionStatus = .error("No readable temperature sensor for preset")
+                return
+            }
+            manualFanIDs.remove(fan)
+            activeCurves[fan] = (curve: curve, sensorKey: sensorKey)
+        }
         isManualMode = !manualFanIDs.isEmpty
-        activeCurves[0] = (curve: curve, sensorKey: sensorKey)
     }
 
     var maxRPM: Double { fanInfo[0]?.maxRPM ?? 7200 }
@@ -288,7 +305,15 @@ final class AppState: ObservableObject {
         max(fanInfo.values.map(\.fanCount).max() ?? 1, 1)
     }
     var presets: [Preset] {
+        builtInPresets + customPresets
+    }
+
+    var builtInPresets: [Preset] {
         PresetManager.shared.defaults(maxRPM: Int(maxRPM), sensorKey: defaultSensorKey)
+    }
+
+    var customPresets: [Preset] {
+        PresetManager.shared.presets
     }
 
     var defaultSensorKey: String {

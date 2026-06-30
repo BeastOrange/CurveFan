@@ -4,7 +4,11 @@ import CurveFanCore
 
 struct PresetsView: View {
     @ObservedObject var state: AppState
-    @State private var selectedPresetName = "Balanced"
+    @State private var selectedPresetID: PresetSelection = .builtIn("Balanced")
+    @State private var editorMode: PresetEditorMode?
+    @State private var pendingDelete: Preset?
+    @State private var showingDeleteConfirmation = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -16,58 +20,188 @@ struct PresetsView: View {
 
                 HStack(alignment: .top, spacing: 18) {
                     PresetLibraryGroup(
-                        presets: state.presets,
-                        selectedPresetName: $selectedPresetName,
-                        activePresetName: state.activePreset?.name
+                        builtInPresets: state.builtInPresets,
+                        customPresets: state.customPresets,
+                        selectedPresetID: $selectedPresetID,
+                        activePreset: state.activePreset,
+                        onCreate: { editorMode = .create }
                     )
                     .frame(minWidth: 300, maxWidth: 420)
 
                     PresetDetailGroup(
                         preset: selectedPreset,
                         state: state,
-                        isConnected: isConnected
+                        isConnected: isConnected,
+                        isCustom: selectedPresetID.customID != nil,
+                        onEdit: { editorMode = .edit(selectedPreset) },
+                        onDelete: { confirmDelete(selectedPreset) }
                     )
                     .frame(maxWidth: .infinity)
                 }
             }
             .padding(24)
         }
+        .sheet(item: $editorMode) { mode in
+            PresetEditorView(state: state, preset: mode.preset) { savedPreset in
+                selectedPresetID = .custom(savedPreset.id)
+            }
+        }
+        .confirmationDialog(
+            "Delete preset?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { deletePendingPreset() }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        }
+        .alert("Preset Error", isPresented: errorBinding) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .onChange(of: state.customPresets) { _, _ in normalizeSelection() }
     }
 
     private var selectedPreset: Preset {
-        state.presets.first { $0.name == selectedPresetName } ??
-            state.presets.first { $0.name == "Balanced" } ??
-            .auto
+        switch selectedPresetID {
+        case .builtIn(let name):
+            return state.builtInPresets.first { $0.name == name } ??
+                state.builtInPresets.first { $0.name == "Balanced" } ??
+                .auto
+        case .custom(let id):
+            return state.customPresets.first { $0.id == id } ??
+                state.builtInPresets.first { $0.name == "Balanced" } ??
+                .auto
+        }
     }
 
     private var isConnected: Bool {
         if case .connected = state.connectionStatus { return true }
         return false
     }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private func confirmDelete(_ preset: Preset) {
+        pendingDelete = preset
+        showingDeleteConfirmation = true
+    }
+
+    private func deletePendingPreset() {
+        guard let preset = pendingDelete else { return }
+        do {
+            try PresetManager.shared.delete(id: preset.id)
+            if selectedPresetID == .custom(preset.id) {
+                selectedPresetID = .builtIn("Balanced")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        pendingDelete = nil
+    }
+
+    private func normalizeSelection() {
+        if case .custom(let id) = selectedPresetID,
+           !state.customPresets.contains(where: { $0.id == id }) {
+            selectedPresetID = .builtIn("Balanced")
+        }
+    }
+}
+
+private enum PresetSelection: Hashable {
+    case builtIn(String)
+    case custom(UUID)
+
+    var customID: UUID? {
+        if case .custom(let id) = self { return id }
+        return nil
+    }
+}
+
+private enum PresetEditorMode: Identifiable {
+    case create
+    case edit(Preset)
+
+    var id: String {
+        switch self {
+        case .create: return "create"
+        case .edit(let preset): return preset.id.uuidString
+        }
+    }
+
+    var preset: Preset? {
+        if case .edit(let preset) = self { return preset }
+        return nil
+    }
 }
 
 private struct PresetLibraryGroup: View {
-    let presets: [Preset]
-    @Binding var selectedPresetName: String
-    let activePresetName: String?
+    let builtInPresets: [Preset]
+    let customPresets: [Preset]
+    @Binding var selectedPresetID: PresetSelection
+    let activePreset: Preset?
+    let onCreate: () -> Void
 
     var body: some View {
         GroupBox {
-            List(selection: $selectedPresetName) {
-                ForEach(presets, id: \.name) { preset in
-                    PresetLibraryRow(
-                        preset: preset,
-                        isActive: activePresetName == preset.name ||
-                            (activePresetName == nil && preset.name == "Auto")
-                    )
-                    .tag(preset.name)
+            VStack(spacing: 10) {
+                HStack {
+                    Button {
+                        onCreate()
+                    } label: {
+                        Label("New", systemImage: "plus")
+                    }
+                    Spacer()
                 }
+
+                List(selection: $selectedPresetID) {
+                    Section("Built-in") {
+                        ForEach(builtInPresets, id: \.name) { preset in
+                            PresetLibraryRow(
+                                preset: preset,
+                                isActive: isActive(preset, selection: .builtIn(preset.name))
+                            )
+                            .tag(PresetSelection.builtIn(preset.name))
+                        }
+                    }
+
+                    Section("Custom") {
+                        if customPresets.isEmpty {
+                            Text("No custom presets")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(customPresets) { preset in
+                                PresetLibraryRow(
+                                    preset: preset,
+                                    isActive: isActive(preset, selection: .custom(preset.id))
+                                )
+                                .tag(PresetSelection.custom(preset.id))
+                            }
+                        }
+                    }
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 470)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
-            .frame(minHeight: 520)
         } label: {
             Label("Preset Library", systemImage: "slider.horizontal.3")
+        }
+    }
+
+    private func isActive(_ preset: Preset, selection: PresetSelection) -> Bool {
+        switch selection {
+        case .builtIn:
+            return activePreset?.name == preset.name ||
+                (activePreset == nil && preset.name == "Auto")
+        case .custom:
+            return activePreset?.id == preset.id
         }
     }
 }
@@ -126,17 +260,14 @@ private struct PresetDetailGroup: View {
     let preset: Preset
     @ObservedObject var state: AppState
     let isConnected: Bool
+    let isCustom: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(preset.name)
-                        .font(.largeTitle.weight(.semibold))
-                    Text(detail)
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
+                header
 
                 NativeMetricTable(rows: [
                     ("Mode", preset.name == "Auto" ? "System" : "Curve"),
@@ -152,21 +283,50 @@ private struct PresetDetailGroup: View {
                     ("Fallback mode", "System Auto")
                 ])
 
-                HStack {
-                    Spacer()
-                    Button("Restore Auto") {
-                        Task { await state.restoreAuto() }
-                    }
-                    Button(applyTitle) {
-                        Task { await state.applyPreset(preset) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canApply)
-                }
+                actionButtons
             }
             .padding(6)
         } label: {
             Label("Preset Details", systemImage: "chart.xyaxis.line")
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(preset.name)
+                    .font(.largeTitle.weight(.semibold))
+                Text(detail)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if isCustom {
+                Button {
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private var actionButtons: some View {
+        HStack {
+            Spacer()
+            Button("Restore Auto") {
+                Task { await state.restoreAuto() }
+            }
+            Button(applyTitle) {
+                Task { await state.applyPreset(preset) }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canApply)
         }
     }
 
@@ -192,7 +352,372 @@ private struct PresetDetailGroup: View {
     }
 
     private var canApply: Bool {
-        isConnected && (preset.name == "Auto" || !state.defaultSensorKey.isEmpty)
+        isConnected && (preset.name == "Auto" || hasSensor)
+    }
+
+    private var hasSensor: Bool {
+        guard let curve = preset.fanToCurve[0] else { return false }
+        return !(preset.fanToSensor[0] ?? curve.sensorKey).isEmpty
+    }
+}
+
+private struct PresetEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var state: AppState
+    let preset: Preset?
+    let onSave: (Preset) -> Void
+
+    @State private var name: String
+    @State private var sensorKey: String
+    @State private var points: [CurvePoint]
+    @State private var errorMessage: String?
+
+    init(state: AppState, preset: Preset?, onSave: @escaping (Preset) -> Void) {
+        self.state = state
+        self.preset = preset
+        self.onSave = onSave
+        _name = State(initialValue: preset?.name ?? "")
+        _sensorKey = State(initialValue: preset?.fanToSensor[0] ?? preset?.fanToCurve[0]?.sensorKey ?? state.defaultSensorKey)
+        _points = State(initialValue: preset?.fanToCurve[0]?.points ?? [
+            CurvePoint(temperature: 30, rpm: Int(state.minRPM)),
+            CurvePoint(temperature: 90, rpm: Int(state.maxRPM))
+        ])
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(preset == nil ? "New Preset" : "Edit Preset")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { savePreset() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSave)
+            }
+
+            Form {
+                TextField("Name", text: $name)
+                sensorPicker
+            }
+            .formStyle(.grouped)
+
+            CurveEditorView(points: $points, minRPM: state.minRPM, maxRPM: state.maxRPM)
+                .frame(minHeight: 330)
+
+            if let errorMessage {
+                AlertBanner(icon: "exclamationmark.triangle", text: errorMessage, tint: .orange)
+            }
+        }
+        .padding(22)
+        .frame(width: 720)
+        .frame(minHeight: 600)
+        .onAppear(perform: selectDefaultSensorIfNeeded)
+        .onChange(of: state.defaultSensorKey) { _, _ in selectDefaultSensorIfNeeded() }
+    }
+
+    private var sensorPicker: some View {
+        Picker("Sensor", selection: $sensorKey) {
+            if state.temperatures.isEmpty {
+                Text("No readable temperature sensors").tag("")
+            } else {
+                ForEach(state.temperatures, id: \.key) { sensor in
+                    Text("\(sensor.name) (\(sensor.key))").tag(sensor.key)
+                }
+            }
+        }
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var rpmRange: ClosedRange<Int> {
+        Int(min(state.minRPM, state.maxRPM))...Int(max(state.minRPM, state.maxRPM))
+    }
+
+    private var validationErrors: [String] {
+        if trimmedName.isEmpty { return ["Preset name is required"] }
+        if sensorKey.isEmpty { return ["No readable temperature sensor for preset"] }
+        let curve = FanCurve(name: trimmedName, points: sortedPoints, sensorKey: sensorKey)
+        return curve.validate(rpmRange: rpmRange)
+    }
+
+    private var sortedPoints: [CurvePoint] {
+        points.sorted { $0.temperature < $1.temperature }
+    }
+
+    private var canSave: Bool {
+        validationErrors.isEmpty
+    }
+
+    private func selectDefaultSensorIfNeeded() {
+        guard sensorKey.isEmpty, !state.defaultSensorKey.isEmpty else { return }
+        sensorKey = state.defaultSensorKey
+    }
+
+    private func savePreset() {
+        let errors = validationErrors
+        guard errors.isEmpty else {
+            errorMessage = errors.joined(separator: "\n")
+            return
+        }
+        do {
+            let saved = makePreset()
+            try PresetManager.shared.save(saved)
+            onSave(saved)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func makePreset() -> Preset {
+        let fanIDs = Array(0..<state.knownFanCount)
+        let curveID = preset?.fanToCurve[0]?.id ?? UUID()
+        let curve = FanCurve(id: curveID, name: trimmedName, points: sortedPoints, sensorKey: sensorKey)
+        let fanToCurve = Dictionary(uniqueKeysWithValues: fanIDs.map { ($0, curve) })
+        let fanToSensor = Dictionary(uniqueKeysWithValues: fanIDs.map { ($0, sensorKey) })
+        return Preset(
+            id: preset?.id ?? UUID(),
+            name: trimmedName,
+            fanToCurve: fanToCurve,
+            fanToSensor: fanToSensor,
+            createdAt: preset?.createdAt ?? Date()
+        )
+    }
+}
+
+private struct CurveEditorView: View {
+    @Binding var points: [CurvePoint]
+    let minRPM: Double
+    let maxRPM: Double
+
+    @State private var selectedIndex: Int?
+    @State private var dragIndex: Int?
+
+    private let tempRange: ClosedRange<Double> = 20...120
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GeometryReader { geometry in
+                Canvas { context, size in
+                    drawEditor(context: context, size: size)
+                }
+                .contentShape(Rectangle())
+                .gesture(dragGesture(size: geometry.size))
+            }
+            .frame(minHeight: 260)
+
+            HStack {
+                Button {
+                    addPoint()
+                } label: {
+                    Label("Add Point", systemImage: "plus")
+                }
+                Button(role: .destructive) {
+                    deleteSelectedPoint()
+                } label: {
+                    Label("Delete Point", systemImage: "trash")
+                }
+                .disabled(selectedIndex == nil || points.count <= 2)
+                Spacer()
+                Text("\(Int(tempRange.lowerBound))-\(Int(tempRange.upperBound))°C · \(formatRPM(minRPM))-\(formatRPM(maxRPM)) RPM")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func dragGesture(size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if dragIndex == nil {
+                    dragIndex = nearestPoint(to: value.startLocation, size: size)
+                }
+                guard let index = dragIndex else { return }
+                selectedIndex = index
+                updatePoint(at: index, location: value.location, size: size)
+            }
+            .onEnded { value in
+                if dragIndex == nil {
+                    addPoint(at: value.location, size: size)
+                }
+                dragIndex = nil
+            }
+    }
+
+    private func drawEditor(context: GraphicsContext, size: CGSize) {
+        let rect = plotRect(size: size)
+        drawGrid(context: context, rect: rect)
+        drawCurve(context: context, rect: rect)
+        drawPoints(context: context, rect: rect)
+    }
+
+    private func drawGrid(context: GraphicsContext, rect: CGRect) {
+        let temps = stride(from: 20, through: 120, by: 20).map(Double.init)
+        let rpms = stride(from: Int(minRPM), through: Int(maxRPM), by: max(Int((maxRPM - minRPM) / 4), 1)).map(Double.init)
+        var grid = Path()
+
+        for temp in temps {
+            let x = xPosition(for: temp, rect: rect)
+            grid.move(to: CGPoint(x: x, y: rect.minY))
+            grid.addLine(to: CGPoint(x: x, y: rect.maxY))
+        }
+        for rpm in rpms {
+            let y = yPosition(for: rpm, rect: rect)
+            grid.move(to: CGPoint(x: rect.minX, y: y))
+            grid.addLine(to: CGPoint(x: rect.maxX, y: y))
+        }
+
+        context.stroke(grid, with: .color(.secondary.opacity(0.18)), lineWidth: 1)
+        context.stroke(Path(rect), with: .color(.secondary.opacity(0.35)), lineWidth: 1)
+
+        for temp in temps {
+            let text = context.resolve(Text("\(Int(temp))°").font(.caption2).foregroundStyle(.secondary))
+            context.draw(text, at: CGPoint(x: xPosition(for: temp, rect: rect), y: rect.maxY + 14), anchor: .center)
+        }
+        for rpm in [minRPM, maxRPM] {
+            let text = context.resolve(Text(formatRPM(rpm)).font(.caption2).foregroundStyle(.secondary))
+            context.draw(text, at: CGPoint(x: rect.minX - 8, y: yPosition(for: rpm, rect: rect)), anchor: .trailing)
+        }
+    }
+
+    private func drawCurve(context: GraphicsContext, rect: CGRect) {
+        let sorted = sortedPoints
+        guard let first = sorted.first else { return }
+        var path = Path()
+        path.move(to: pointPosition(first, rect: rect))
+        for point in sorted.dropFirst() {
+            path.addLine(to: pointPosition(point, rect: rect))
+        }
+        context.stroke(path, with: .color(.accentColor), lineWidth: 2.5)
+    }
+
+    private func drawPoints(context: GraphicsContext, rect: CGRect) {
+        for (index, point) in sortedPoints.enumerated() {
+            let center = pointPosition(point, rect: rect)
+            let radius: CGFloat = selectedIndex == index ? 7 : 5
+            let dot = Path(ellipseIn: CGRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            ))
+            context.fill(dot, with: .color(.accentColor))
+            context.stroke(dot, with: .color(.white.opacity(0.85)), lineWidth: 1)
+        }
+    }
+
+    private func updatePoint(at index: Int, location: CGPoint, size: CGSize) {
+        var sorted = sortedPoints
+        guard sorted.indices.contains(index) else { return }
+        let rect = plotRect(size: size)
+        sorted[index] = CurvePoint(
+            temperature: clampedTemperature(at: index, location: location, rect: rect, points: sorted),
+            rpm: rpm(at: location.y, rect: rect)
+        )
+        points = sorted
+    }
+
+    private func addPoint() {
+        let previous = sortedPoints
+        guard previous.count < 12 else { return }
+        let midTemp = midpointOfWidestGap(in: previous) ?? 60
+        guard canInsertTemperature(midTemp, into: previous) else { return }
+        let midRPM = Int((minRPM + maxRPM) / 2)
+        points = (previous + [CurvePoint(temperature: midTemp, rpm: midRPM)])
+            .sorted { $0.temperature < $1.temperature }
+        selectedIndex = points.firstIndex { $0.temperature == midTemp && $0.rpm == midRPM }
+    }
+
+    private func addPoint(at location: CGPoint, size: CGSize) {
+        guard points.count < 12 else { return }
+        let rect = plotRect(size: size)
+        let temperature = temp(at: location.x, rect: rect)
+        guard canInsertTemperature(temperature, into: sortedPoints) else { return }
+        let point = CurvePoint(temperature: temperature, rpm: rpm(at: location.y, rect: rect))
+        points = (sortedPoints + [point]).sorted { $0.temperature < $1.temperature }
+        selectedIndex = points.firstIndex { $0.temperature == point.temperature && $0.rpm == point.rpm }
+    }
+
+    private func deleteSelectedPoint() {
+        guard let selectedIndex, points.count > 2 else { return }
+        var sorted = sortedPoints
+        guard sorted.indices.contains(selectedIndex) else { return }
+        sorted.remove(at: selectedIndex)
+        points = sorted
+        self.selectedIndex = nil
+    }
+
+    private var sortedPoints: [CurvePoint] {
+        points.sorted { $0.temperature < $1.temperature }
+    }
+
+    private func canInsertTemperature(_ temperature: Double, into points: [CurvePoint]) -> Bool {
+        points.allSatisfy { abs($0.temperature - temperature) >= 1 }
+    }
+
+    private func midpointOfWidestGap(in points: [CurvePoint]) -> Double? {
+        guard points.count >= 2 else { return nil }
+        var bestPair = (points[0], points[1])
+        var bestGap = points[1].temperature - points[0].temperature
+        for index in 1..<(points.count - 1) {
+            let gap = points[index + 1].temperature - points[index].temperature
+            if gap > bestGap {
+                bestGap = gap
+                bestPair = (points[index], points[index + 1])
+            }
+        }
+        return (bestPair.0.temperature + bestPair.1.temperature) / 2
+    }
+
+    private func nearestPoint(to location: CGPoint, size: CGSize) -> Int? {
+        let rect = plotRect(size: size)
+        let distances = sortedPoints.enumerated().map { index, point in
+            (index, hypot(pointPosition(point, rect: rect).x - location.x, pointPosition(point, rect: rect).y - location.y))
+        }
+        guard let nearest = distances.min(by: { $0.1 < $1.1 }), nearest.1 <= 18 else { return nil }
+        return nearest.0
+    }
+
+    private func clampedTemperature(at index: Int, location: CGPoint, rect: CGRect, points: [CurvePoint]) -> Double {
+        let lower = index == 0 ? tempRange.lowerBound : points[index - 1].temperature + 1
+        let upper = index == points.count - 1 ? tempRange.upperBound : points[index + 1].temperature - 1
+        return min(max(temp(at: location.x, rect: rect), lower), max(lower, upper))
+    }
+
+    private func temp(at x: CGFloat, rect: CGRect) -> Double {
+        let ratio = min(max((x - rect.minX) / max(rect.width, 1), 0), 1)
+        return tempRange.lowerBound + Double(ratio) * (tempRange.upperBound - tempRange.lowerBound)
+    }
+
+    private func rpm(at y: CGFloat, rect: CGRect) -> Int {
+        let ratio = min(max((rect.maxY - y) / max(rect.height, 1), 0), 1)
+        let value = minRPM + Double(ratio) * (maxRPM - minRPM)
+        return Int(value.rounded())
+    }
+
+    private func pointPosition(_ point: CurvePoint, rect: CGRect) -> CGPoint {
+        CGPoint(
+            x: xPosition(for: point.temperature, rect: rect),
+            y: yPosition(for: Double(point.rpm), rect: rect)
+        )
+    }
+
+    private func xPosition(for temp: Double, rect: CGRect) -> CGFloat {
+        let ratio = (temp - tempRange.lowerBound) / (tempRange.upperBound - tempRange.lowerBound)
+        return rect.minX + CGFloat(ratio) * rect.width
+    }
+
+    private func yPosition(for rpm: Double, rect: CGRect) -> CGFloat {
+        let rpmRange = max(maxRPM - minRPM, 1)
+        let ratio = (rpm - minRPM) / rpmRange
+        return rect.maxY - CGFloat(ratio) * rect.height
+    }
+
+    private func plotRect(size: CGSize) -> CGRect {
+        CGRect(x: 52, y: 16, width: max(size.width - 68, 1), height: max(size.height - 46, 1))
     }
 }
 
@@ -235,7 +760,6 @@ private struct CurvePreview: View {
             AreaMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
                 .opacity(0.12)
             LineMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
-                .interpolationMethod(.monotone)
             PointMark(x: .value("Temp", point.temperature), y: .value("RPM", rpm))
                 .symbolSize(30)
         }
