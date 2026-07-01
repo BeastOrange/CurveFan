@@ -63,25 +63,27 @@ final class SMCServer: @unchecked Sendable {
             let client = accept(listenFD, nil, nil)
             guard client >= 0 else { continue }
             DispatchQueue.global().async { [handler] in
-                defer { close(client) }
-                guard PeerAuth.peerIsAuthorized(socket: client) else {
-                    os_log(.error, "rejected unauthorized IPC peer")
-                    return
-                }
-                let decoder = JSONDecoder()
-                let encoder = JSONEncoder()
-                do {
-                    let request = try receiveFrame(socket: client)
-                    let response: IPCResponse
-                    if let command = try? decoder.decode(IPCCommand.self, from: request) {
-                        response = handler.respond(to: command)
-                    } else {
-                        response = IPCResponse(success: false, value: nil, error: "invalid command")
+                Task {
+                    defer { close(client) }
+                    guard PeerAuth.peerIsAuthorized(socket: client) else {
+                        os_log(.error, "rejected unauthorized IPC peer")
+                        return
                     }
-                    let responseData = try encoder.encode(response)
-                    try sendFrame(responseData, socket: client)
-                } catch {
-                    os_log(.error, "IPC error: %{public}@", error.localizedDescription)
+                    let decoder = JSONDecoder()
+                    let encoder = JSONEncoder()
+                    do {
+                        let request = try receiveFrame(socket: client)
+                        let response: IPCResponse
+                        if let command = try? decoder.decode(IPCCommand.self, from: request) {
+                            response = await handler.respond(to: command)
+                        } else {
+                            response = IPCResponse(success: false, value: nil, error: "invalid command")
+                        }
+                        let responseData = try encoder.encode(response)
+                        try sendFrame(responseData, socket: client)
+                    } catch {
+                        os_log(.error, "IPC error: %{public}@", error.localizedDescription)
+                    }
                 }
             }
         }
