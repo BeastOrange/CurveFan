@@ -67,6 +67,18 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
         return current + (delta > 0 ? maxChange : -maxChange)
     }
 
+    public static func rateLimitedTemperature(
+        current: Double,
+        target: Double,
+        interval: TimeInterval,
+        maxChangePerSecond: Double
+    ) -> Double {
+        let delta = target - current
+        let maxChange = max(0.001, maxChangePerSecond * interval)
+        if abs(delta) <= maxChange { return target }
+        return current + (delta > 0 ? maxChange : -maxChange)
+    }
+
     public func validate(rpmRange: ClosedRange<Int>) -> [String] {
         var errors: [String] = []
         if points.count < 2 {
@@ -84,8 +96,8 @@ public struct FanCurve: Codable, Identifiable, Equatable, Sendable {
             }
         }
         for (i, point) in points.enumerated() {
-            if point.temperature < 0 || point.temperature > 120 {
-                errors.append("Point \(i): temperature \(point.temperature)°C is out of range (0-120)")
+            if point.temperature < 0 || point.temperature > 100 {
+                errors.append("Point \(i): temperature \(point.temperature)°C is out of range (0-100)")
             }
             if !rpmRange.contains(point.rpm) {
                 errors.append("Point \(i): RPM \(point.rpm) is out of range (\(rpmRange.lowerBound)-\(rpmRange.upperBound))")
@@ -168,10 +180,10 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
     public static func quiet(maxRPM: Int, sensorKey: String) -> Preset {
         let curve = FanCurve(name: "Quiet", points: [
-            CurvePoint(temperature: 30, rpm: 0),
-            CurvePoint(temperature: 50, rpm: 1200),
+            CurvePoint(temperature: 20, rpm: 1200),
+            CurvePoint(temperature: 45, rpm: 1200),
             CurvePoint(temperature: 70, rpm: 2500),
-            CurvePoint(temperature: 90, rpm: maxRPM)
+            CurvePoint(temperature: 100, rpm: maxRPM)
         ], sensorKey: sensorKey)
         return Preset(name: "Quiet", fanToCurve: [0: curve], fanToSensor: sensorKey.isEmpty ? [:] : [0: sensorKey])
     }
@@ -182,10 +194,10 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
     public static func balanced(maxRPM: Int, sensorKey: String) -> Preset {
         let curve = FanCurve(name: "Balanced", points: [
-            CurvePoint(temperature: 30, rpm: 1200),
+            CurvePoint(temperature: 20, rpm: 1200),
             CurvePoint(temperature: 50, rpm: 2000),
             CurvePoint(temperature: 70, rpm: 3500),
-            CurvePoint(temperature: 85, rpm: maxRPM)
+            CurvePoint(temperature: 100, rpm: maxRPM)
         ], sensorKey: sensorKey)
         return Preset(name: "Balanced", fanToCurve: [0: curve], fanToSensor: sensorKey.isEmpty ? [:] : [0: sensorKey])
     }
@@ -196,8 +208,8 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
     public static func maxCool(maxRPM: Int, sensorKey: String) -> Preset {
         let curve = FanCurve(name: "MaxCool", points: [
-            CurvePoint(temperature: 25, rpm: maxRPM / 2),
-            CurvePoint(temperature: 40, rpm: maxRPM)
+            CurvePoint(temperature: 20, rpm: maxRPM / 2),
+            CurvePoint(temperature: 35, rpm: maxRPM)
         ], sensorKey: sensorKey)
         return Preset(name: "MaxCool", fanToCurve: [0: curve], fanToSensor: sensorKey.isEmpty ? [:] : [0: sensorKey])
     }

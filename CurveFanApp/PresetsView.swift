@@ -362,6 +362,8 @@ private struct PresetDetailGroup: View {
 }
 
 private struct PresetEditorView: View {
+    private static let startTemperatureOptions = stride(from: 0, through: 25, by: 5).map(Double.init)
+
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var state: AppState
     let preset: Preset?
@@ -369,6 +371,7 @@ private struct PresetEditorView: View {
 
     @State private var name: String
     @State private var sensorKey: String
+    @State private var startTemperature: Double
     @State private var points: [CurvePoint]
     @State private var errorMessage: String?
 
@@ -378,9 +381,11 @@ private struct PresetEditorView: View {
         self.onSave = onSave
         _name = State(initialValue: preset?.name ?? "")
         _sensorKey = State(initialValue: preset?.fanToSensor[0] ?? preset?.fanToCurve[0]?.sensorKey ?? state.defaultSensorKey)
+        let initialStart = preset?.fanToCurve[0]?.points.first?.temperature ?? 20
+        _startTemperature = State(initialValue: Self.clampedStartTemperature(initialStart))
         _points = State(initialValue: preset?.fanToCurve[0]?.points ?? [
-            CurvePoint(temperature: 30, rpm: Int(state.minRPM)),
-            CurvePoint(temperature: 90, rpm: Int(state.maxRPM))
+            CurvePoint(temperature: 20, rpm: Int(state.minRPM)),
+            CurvePoint(temperature: 100, rpm: Int(state.maxRPM))
         ])
     }
 
@@ -399,10 +404,16 @@ private struct PresetEditorView: View {
             Form {
                 TextField("Name", text: $name)
                 sensorPicker
+                startTemperaturePicker
             }
             .formStyle(.grouped)
 
-            CurveEditorView(points: $points, minRPM: state.minRPM, maxRPM: state.maxRPM)
+            CurveEditorView(
+                points: $points,
+                minRPM: state.minRPM,
+                maxRPM: state.maxRPM,
+                startTemperature: startTemperature
+            )
                 .frame(minHeight: 330)
 
             if let errorMessage {
@@ -412,8 +423,14 @@ private struct PresetEditorView: View {
         .padding(22)
         .frame(width: 720)
         .frame(minHeight: 600)
-        .onAppear(perform: selectDefaultSensorIfNeeded)
+        .onAppear {
+            selectDefaultSensorIfNeeded()
+            normalizePointsForStartTemperature()
+        }
         .onChange(of: state.defaultSensorKey) { _, _ in selectDefaultSensorIfNeeded() }
+        .onChange(of: startTemperature) { _, _ in
+            normalizePointsForStartTemperature()
+        }
     }
 
     private var sensorPicker: some View {
@@ -425,6 +442,25 @@ private struct PresetEditorView: View {
                     Text("\(sensor.name) (\(sensor.key))").tag(sensor.key)
                 }
             }
+        }
+    }
+
+    private var startTemperaturePicker: some View {
+        LabeledContent("Start temp") {
+            Slider(
+                value: $startTemperature,
+                in: (Self.startTemperatureOptions.first ?? 0)...(Self.startTemperatureOptions.last ?? 25),
+                step: 5,
+                label: { Text("Start temp") },
+                tick: { value in
+                    SliderTick(value) {
+                        Text("\(Int(value))°C")
+                            .font(.caption2)
+                    }
+                }
+            )
+            .labelsHidden()
+            .frame(minWidth: 280)
         }
     }
 
@@ -454,6 +490,50 @@ private struct PresetEditorView: View {
     private func selectDefaultSensorIfNeeded() {
         guard sensorKey.isEmpty, !state.defaultSensorKey.isEmpty else { return }
         sensorKey = state.defaultSensorKey
+    }
+
+    private func normalizePointsForStartTemperature() {
+        let normalizedStart = Self.clampedStartTemperature(startTemperature)
+        if startTemperature != normalizedStart {
+            startTemperature = normalizedStart
+            return
+        }
+
+        var updated = sortedPoints
+        if updated.isEmpty {
+            updated = [
+                CurvePoint(temperature: normalizedStart, rpm: Int(state.minRPM)),
+                CurvePoint(temperature: 100, rpm: Int(state.maxRPM))
+            ]
+        }
+
+        let firstRPM = updated.first?.rpm ?? Int(state.minRPM)
+        updated[0] = CurvePoint(temperature: normalizedStart, rpm: firstRPM)
+        updated = updated.filter { point in
+            (point.temperature == normalizedStart || point.temperature >= normalizedStart + 1)
+                && point.temperature <= 100
+        }
+
+        if updated.count < 2 {
+            updated.append(CurvePoint(temperature: 100, rpm: Int(state.maxRPM)))
+        }
+
+        // The last point must sit exactly at 100°C. Older presets could store points
+        // beyond 100° (the temperature ceiling used to be 120°); drop/clamp them here.
+        if updated.last!.temperature < 100 {
+            updated.append(CurvePoint(temperature: 100, rpm: max(updated.last!.rpm, Int(state.minRPM))))
+        } else if updated.last!.temperature > 100 {
+            updated[updated.count - 1] = CurvePoint(temperature: 100, rpm: max(updated.last!.rpm, Int(state.minRPM)))
+        }
+
+        points = updated.sorted { $0.temperature < $1.temperature }
+    }
+
+    private static func clampedStartTemperature(_ value: Double) -> Double {
+        if let exact = startTemperatureOptions.first(where: { abs($0 - value) < 0.5 }) {
+            return exact
+        }
+        return startTemperatureOptions.min(by: { abs($0 - value) < abs($1 - value) }) ?? 20
     }
 
     private func savePreset() {
@@ -492,11 +572,14 @@ private struct CurveEditorView: View {
     @Binding var points: [CurvePoint]
     let minRPM: Double
     let maxRPM: Double
+    let startTemperature: Double
 
     @State private var selectedIndex: Int?
     @State private var dragIndex: Int?
 
-    private let tempRange: ClosedRange<Double> = 20...120
+    private var tempRange: ClosedRange<Double> {
+        startTemperature...100
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -548,38 +631,39 @@ private struct CurveEditorView: View {
     }
 
     private func drawEditor(context: GraphicsContext, size: CGSize) {
-        let rect = plotRect(size: size)
-        drawGrid(context: context, rect: rect)
-        drawCurve(context: context, rect: rect)
-        drawPoints(context: context, rect: rect)
+        let border = plotRect(size: size)
+        let content = pointRect(size: size)
+        drawGrid(context: context, border: border, content: content)
+        drawCurve(context: context, rect: content)
+        drawPoints(context: context, rect: content)
     }
 
-    private func drawGrid(context: GraphicsContext, rect: CGRect) {
-        let temps = stride(from: 20, through: 120, by: 20).map(Double.init)
+    private func drawGrid(context: GraphicsContext, border: CGRect, content: CGRect) {
+        let temps = gridTemperatures
         let rpms = stride(from: Int(minRPM), through: Int(maxRPM), by: max(Int((maxRPM - minRPM) / 4), 1)).map(Double.init)
         var grid = Path()
 
         for temp in temps {
-            let x = xPosition(for: temp, rect: rect)
-            grid.move(to: CGPoint(x: x, y: rect.minY))
-            grid.addLine(to: CGPoint(x: x, y: rect.maxY))
+            let x = xPosition(for: temp, rect: content)
+            grid.move(to: CGPoint(x: x, y: border.minY))
+            grid.addLine(to: CGPoint(x: x, y: border.maxY))
         }
         for rpm in rpms {
-            let y = yPosition(for: rpm, rect: rect)
-            grid.move(to: CGPoint(x: rect.minX, y: y))
-            grid.addLine(to: CGPoint(x: rect.maxX, y: y))
+            let y = yPosition(for: rpm, rect: content)
+            grid.move(to: CGPoint(x: border.minX, y: y))
+            grid.addLine(to: CGPoint(x: border.maxX, y: y))
         }
 
         context.stroke(grid, with: .color(.secondary.opacity(0.18)), lineWidth: 1)
-        context.stroke(Path(rect), with: .color(.secondary.opacity(0.35)), lineWidth: 1)
+        context.stroke(Path(border), with: .color(.secondary.opacity(0.35)), lineWidth: 1)
 
         for temp in temps {
             let text = context.resolve(Text("\(Int(temp))°").font(.caption2).foregroundStyle(.secondary))
-            context.draw(text, at: CGPoint(x: xPosition(for: temp, rect: rect), y: rect.maxY + 14), anchor: .center)
+            context.draw(text, at: CGPoint(x: xPosition(for: temp, rect: content), y: border.maxY + 14), anchor: .center)
         }
         for rpm in [minRPM, maxRPM] {
             let text = context.resolve(Text(formatRPM(rpm)).font(.caption2).foregroundStyle(.secondary))
-            context.draw(text, at: CGPoint(x: rect.minX - 8, y: yPosition(for: rpm, rect: rect)), anchor: .trailing)
+            context.draw(text, at: CGPoint(x: border.minX - 8, y: yPosition(for: rpm, rect: content)), anchor: .trailing)
         }
     }
 
@@ -614,7 +698,7 @@ private struct CurveEditorView: View {
     private func updatePoint(at index: Int, location: CGPoint, size: CGSize) {
         var sorted = sortedPoints
         guard sorted.indices.contains(index) else { return }
-        let rect = plotRect(size: size)
+        let rect = pointRect(size: size)
         let temperature = clampedTemperature(at: index, location: location, rect: rect, points: sorted)
         sorted[index] = CurvePoint(
             temperature: temperature,
@@ -626,7 +710,7 @@ private struct CurveEditorView: View {
     private func addPoint() {
         let previous = sortedPoints
         guard previous.count < 12 else { return }
-        let midTemp = midpointOfWidestGap(in: previous) ?? 60
+        let midTemp = midpointOfWidestGap(in: previous) ?? 50
         guard canInsertTemperature(midTemp, into: previous) else { return }
         let midRPM = FanCurve(points: previous).rpm(for: midTemp, minRPM: Int(minRPM), maxRPM: Int(maxRPM))
         points = (previous + [CurvePoint(temperature: midTemp, rpm: midRPM)])
@@ -636,7 +720,7 @@ private struct CurveEditorView: View {
 
     private func addPoint(at location: CGPoint, size: CGSize) {
         guard points.count < 12 else { return }
-        let rect = plotRect(size: size)
+        let rect = pointRect(size: size)
         let temperature = temp(at: location.x, rect: rect)
         guard canInsertTemperature(temperature, into: sortedPoints) else { return }
         var updated = (sortedPoints + [CurvePoint(temperature: temperature, rpm: rpm(at: location.y, rect: rect))])
@@ -681,7 +765,7 @@ private struct CurveEditorView: View {
     }
 
     private func nearestPoint(to location: CGPoint, size: CGSize) -> Int? {
-        let rect = plotRect(size: size)
+        let rect = pointRect(size: size)
         let distances = sortedPoints.enumerated().map { index, point in
             (index, hypot(pointPosition(point, rect: rect).x - location.x, pointPosition(point, rect: rect).y - location.y))
         }
@@ -690,7 +774,8 @@ private struct CurveEditorView: View {
     }
 
     private func clampedTemperature(at index: Int, location: CGPoint, rect: CGRect, points: [CurvePoint]) -> Double {
-        let lower = index == 0 ? tempRange.lowerBound : points[index - 1].temperature + 1
+        if index == 0 { return tempRange.lowerBound }
+        let lower = points[index - 1].temperature + 1
         let upper = index == points.count - 1 ? tempRange.upperBound : points[index + 1].temperature - 1
         return min(max(temp(at: location.x, rect: rect), lower), max(lower, upper))
     }
@@ -731,18 +816,39 @@ private struct CurveEditorView: View {
     }
 
     private func xPosition(for temp: Double, rect: CGRect) -> CGFloat {
-        let ratio = (temp - tempRange.lowerBound) / (tempRange.upperBound - tempRange.lowerBound)
-        return rect.minX + CGFloat(ratio) * rect.width
+        let span = tempRange.upperBound - tempRange.lowerBound
+        let ratio = span > 0 ? (temp - tempRange.lowerBound) / span : 0
+        let clamped = min(max(ratio, 0), 1)
+        return rect.minX + CGFloat(clamped) * rect.width
     }
 
     private func yPosition(for rpm: Double, rect: CGRect) -> CGFloat {
         let rpmRange = max(maxRPM - minRPM, 1)
         let ratio = (rpm - minRPM) / rpmRange
-        return rect.maxY - CGFloat(ratio) * rect.height
+        let clamped = min(max(ratio, 0), 1)
+        return rect.maxY - CGFloat(clamped) * rect.height
     }
 
     private func plotRect(size: CGSize) -> CGRect {
         CGRect(x: 52, y: 16, width: max(size.width - 68, 1), height: max(size.height - 46, 1))
+    }
+
+    /// The drawing rect for curve and points, inset so end/top dots never spill across the plot border.
+    private func pointRect(size: CGSize) -> CGRect {
+        plotRect(size: size).insetBy(dx: Self.pointInset, dy: Self.pointInset)
+    }
+
+    /// Half the largest dot diameter plus its stroke, so selected end-points stay fully inside the border.
+    private static let pointInset: CGFloat = 16
+
+    private var gridTemperatures: [Double] {
+        let base = stride(from: 0, through: 100, by: 20)
+            .map(Double.init)
+            .filter { $0 >= tempRange.lowerBound }
+        if base.first == tempRange.lowerBound {
+            return base
+        }
+        return [tempRange.lowerBound] + base
     }
 }
 
@@ -795,6 +901,7 @@ private struct CurvePreview: View {
                     .symbolSize(30)
             }
         }
+        .chartXScale(domain: (curve.points.first?.temperature ?? 0)...100)
         .chartYScale(domain: chartMinRPM...maxRPM)
         .chartXAxisLabel("°C")
         .accessibilityLabel("Fan curve preview")
@@ -812,7 +919,7 @@ private struct CurvePreview: View {
     private var sampledPoints: [CurvePoint] {
         guard let first = curve.points.first, let last = curve.points.last else { return [] }
         let lower = Int(first.temperature.rounded(.down))
-        let upper = Int(last.temperature.rounded(.up))
+        let upper = 100  // Always sample through 100°C for consistent chart bounds
         let samples = stride(from: lower, through: upper, by: 1).map { value in
             let temp = Double(value)
             return CurvePoint(

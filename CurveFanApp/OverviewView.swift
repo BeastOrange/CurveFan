@@ -16,6 +16,7 @@ struct OverviewView: View {
                     rpm: fanInfo?.actualRPM,
                     minRPM: state.minRPM,
                     maxRPM: state.maxRPM,
+                    pollingInterval: state.pollingInterval,
                     controlText: controlSummary,
                     cpuText: sensorText(.cpu),
                     gpuText: sensorText(.gpu),
@@ -86,6 +87,7 @@ struct OverviewSummaryGroup: View {
     let rpm: Double?
     let minRPM: Double
     let maxRPM: Double
+    let pollingInterval: TimeInterval
     let controlText: String
     let cpuText: String
     let gpuText: String
@@ -111,7 +113,8 @@ struct OverviewSummaryGroup: View {
                         samples: samples,
                         currentRPM: rpm,
                         minRPM: minRPM,
-                        maxRPM: maxRPM
+                        maxRPM: maxRPM,
+                        pollingInterval: pollingInterval
                     )
                     .frame(height: 168)
 

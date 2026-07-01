@@ -112,6 +112,23 @@ final class FanCurveTests: XCTestCase {
         XCTAssertFalse(curve.isValid)
     }
 
+    func testValidateRejectsTemperatureAboveOneHundred() {
+        let curve = FanCurve(points: [
+            CurvePoint(temperature: 0, rpm: 1200),
+            CurvePoint(temperature: 101, rpm: 4000)
+        ])
+        let errors = curve.validate(rpmRange: 1000...5000)
+        XCTAssert(errors.contains { $0.contains("0-100") })
+    }
+
+    func testValidateAllowsZeroDegreeStartPoint() {
+        let curve = FanCurve(points: [
+            CurvePoint(temperature: 0, rpm: 1200),
+            CurvePoint(temperature: 100, rpm: 4000)
+        ])
+        XCTAssertTrue(curve.validate(rpmRange: 1000...5000).isEmpty)
+    }
+
     func testRateLimiterMovesTowardTargetByIntervalBudget() {
         XCTAssertEqual(
             FanCurve.rateLimitedRPM(current: 1200, target: 5000, interval: 2, maxRPMChangePerSecond: 600),
@@ -127,6 +144,19 @@ final class FanCurveTests: XCTestCase {
         XCTAssertEqual(
             FanCurve.rateLimitedRPM(current: 2000, target: 2500, interval: 2, maxRPMChangePerSecond: 600),
             2500
+        )
+    }
+
+    func testTemperatureRateLimiterMovesTowardTargetByIntervalBudget() {
+        XCTAssertEqual(
+            FanCurve.rateLimitedTemperature(current: 90, target: 60, interval: 2, maxChangePerSecond: 3),
+            84,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            FanCurve.rateLimitedTemperature(current: 60, target: 90, interval: 2, maxChangePerSecond: 3),
+            66,
+            accuracy: 0.001
         )
     }
 

@@ -28,6 +28,8 @@ final class PresetTests: XCTestCase {
         let quiet = Preset.quiet(maxRPM: 5000)
         XCTAssertNotNil(quiet.fanToCurve[0])
         XCTAssertEqual(quiet.fanToCurve[0]?.points.count, 4)
+        XCTAssertEqual(quiet.fanToCurve[0]?.points.first?.temperature, 20)
+        XCTAssertEqual(quiet.fanToCurve[0]?.points.last?.temperature, 100)
     }
 
     func testPresetCodable() throws {

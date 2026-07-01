@@ -133,8 +133,9 @@ final class AppState: ObservableObject {
     /// Active fan curve driven by the poll loop, keyed by fan index. Empty when
     /// no preset curve is running.
     private var activeCurves: [Int: (curve: FanCurve, sensorKey: String)] = [:]
-    private var curveTargetRPMs: [Int: Int] = [:]
+    private var curveEffectiveTemperatures: [Int: Double] = [:]
     private let maxCurveRPMChangePerSecond = 600
+    private let maxCurveTemperatureChangePerSecond = 3.0
 
     init() {
         presetCancellable = PresetManager.shared.objectWillChange
@@ -197,13 +198,25 @@ final class AppState: ObservableObject {
                   let temp = temperatures.first(where: { $0.key == entry.sensorKey })?.value else {
                 continue
             }
-            let target = entry.curve.rpm(for: temp, minRPM: Int(info.minRPM), maxRPM: Int(info.maxRPM))
+            let effectiveTemperature = FanCurve.rateLimitedTemperature(
+                current: curveEffectiveTemperatures[fan] ?? temp,
+                target: temp,
+                interval: pollingInterval,
+                maxChangePerSecond: maxCurveTemperatureChangePerSecond
+            )
+            curveEffectiveTemperatures[fan] = effectiveTemperature
+
+            let target = entry.curve.rpm(
+                for: effectiveTemperature,
+                minRPM: Int(info.minRPM),
+                maxRPM: Int(info.maxRPM)
+            )
             guard target > 0 else {
-                curveTargetRPMs[fan] = nil
+                curveEffectiveTemperatures[fan] = nil
                 await controller.restoreAutoLogging(fan)
                 continue
             }
-            let current = curveTargetRPMs[fan] ?? Int(info.actualRPM)
+            let current = Int(info.actualRPM)
             let limitedTarget = FanCurve.rateLimitedRPM(
                 current: current,
                 target: target,
@@ -212,7 +225,6 @@ final class AppState: ObservableObject {
             )
             do {
                 try await controller.unlockAndSetRPM(fan, rpm: limitedTarget)
-                curveTargetRPMs[fan] = limitedTarget
             } catch {
                 NSLog("CurveFan curve control failed: \(error.localizedDescription)")
             }
@@ -235,7 +247,7 @@ final class AppState: ObservableObject {
         do {
             try await controller.unlockAndSetRPM(fan, rpm: Int(rpm))
             activeCurves[fan] = nil
-            curveTargetRPMs[fan] = nil
+            curveEffectiveTemperatures[fan] = nil
             manualFanIDs.insert(fan)
             isManualMode = true
             if fan == 0 {
@@ -258,7 +270,7 @@ final class AppState: ObservableObject {
 
     func restoreAuto(fan: Int) async {
         activeCurves[fan] = nil
-        curveTargetRPMs[fan] = nil
+        curveEffectiveTemperatures[fan] = nil
         manualFanIDs.remove(fan)
         isManualMode = !manualFanIDs.isEmpty
         if fan == 0 {
@@ -276,7 +288,7 @@ final class AppState: ObservableObject {
         isManualMode = false
         manualFanIDs.removeAll()
         activeCurves.removeAll()
-        curveTargetRPMs.removeAll()
+        curveEffectiveTemperatures.removeAll()
         activePreset = .auto
         for fan in 0..<knownFanCount {
             await controller.restoreAutoLogging(fan)
@@ -312,7 +324,7 @@ final class AppState: ObservableObject {
             }
             manualFanIDs.remove(fan)
             activeCurves[fan] = (curve: curve, sensorKey: sensorKey)
-            curveTargetRPMs[fan] = nil
+            curveEffectiveTemperatures[fan] = temperatures.first(where: { $0.key == sensorKey })?.value
         }
         isManualMode = !manualFanIDs.isEmpty
     }
