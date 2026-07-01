@@ -91,15 +91,17 @@ struct PresetsView: View {
 
     private func deletePendingPreset() {
         guard let preset = pendingDelete else { return }
-        do {
-            try PresetManager.shared.delete(id: preset.id)
-            if selectedPresetID == .custom(preset.id) {
-                selectedPresetID = .builtIn("Balanced")
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
         pendingDelete = nil
+        Task {
+            do {
+                try await PresetViewModel.shared.delete(id: preset.id)
+                if selectedPresetID == .custom(preset.id) {
+                    selectedPresetID = .builtIn("Balanced")
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func normalizeSelection() {
@@ -536,13 +538,15 @@ private struct PresetEditorView: View {
             errorMessage = errors.joined(separator: "\n")
             return
         }
-        do {
-            let saved = makePreset()
-            try PresetManager.shared.save(saved)
-            onSave(saved)
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
+        let saved = makePreset()
+        Task {
+            do {
+                try await PresetViewModel.shared.save(saved)
+                onSave(saved)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
