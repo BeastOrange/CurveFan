@@ -79,17 +79,14 @@ struct MainView: View {
 
     private var fanInfo: FanInfo? { state.fanInfo[0] }
 
-    private var isConnected: Bool {
-        if case .connected = state.connectionStatus { return true }
-        return false
-    }
+    private var isConnected: Bool { state.connectionStatus.isConnected }
 
     private var activePresetName: String? {
-        guard let name = state.activePreset?.name, name != "Auto" else { return nil }
-        return name
+        guard let preset = state.activePreset, !preset.isAuto else { return nil }
+        return preset.name
     }
 
-    private var curvePresets: [Preset] { state.presets.filter { $0.name != "Auto" } }
+    private var curvePresets: [Preset] { state.presets.filter { !$0.isAuto } }
 
     private var controlState: MenuControlState {
         guard isConnected else { return .offline }

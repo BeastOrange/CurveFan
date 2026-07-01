@@ -53,13 +53,10 @@ struct OverviewView: View {
         state.fanInfo[0]
     }
 
-    private var isConnected: Bool {
-        if case .connected = state.connectionStatus { return true }
-        return false
-    }
+    private var isConnected: Bool { state.connectionStatus.isConnected }
     private var selectedPreset: Preset? {
         if let activeName = state.activePreset?.name,
-           activeName != "Auto",
+           !(state.activePreset?.isAuto ?? false),
            let current = state.presets.first(where: { $0.name == activeName }) {
             return current
         }
@@ -69,7 +66,7 @@ struct OverviewView: View {
     private var controlSummary: String {
         let fanLabel = fanInfo.map { "\($0.fanCount) fan\($0.fanCount == 1 ? "" : "s")" } ?? "fan data pending"
         if state.isManualMode { return "Manual override - \(fanLabel)" }
-        if let name = state.activePreset?.name, name != "Auto" {
+        if let name = state.activePreset?.name, !(state.activePreset?.isAuto ?? false) {
             return "Curve - \(name) - \(fanLabel)"
         }
         return "System Auto - \(fanLabel)"
@@ -179,7 +176,7 @@ struct FanControlsGroup: View {
                     Text("Presets")
                         .font(.headline)
                     HStack(spacing: 8) {
-                        ForEach(state.presets.filter { $0.name != "Auto" }) { preset in
+                        ForEach(state.presets.filter { !$0.isAuto }) { preset in
                             PresetButton(
                                 preset: preset,
                                 isSelected: selectedPreset?.name == preset.name,
@@ -205,7 +202,7 @@ struct FanControlsGroup: View {
         Binding(
             get: {
                 if state.isManualMode { return .manual }
-                if let name = state.activePreset?.name, name != "Auto" { return .curve }
+                if !(state.activePreset?.isAuto ?? false) { return .curve }
                 return .system
             },
             set: { mode in

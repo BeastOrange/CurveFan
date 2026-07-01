@@ -80,7 +80,7 @@ struct FansView: View {
     }
 
     private var activeCurvePreset: Preset? {
-        guard let preset = state.activePreset, preset.name != "Auto" else { return nil }
+        guard let preset = state.activePreset, !preset.isAuto else { return nil }
         return preset
     }
 
@@ -89,10 +89,7 @@ struct FansView: View {
         return activeCurvePreset?.fanToCurve[fan]
     }
 
-    private var isConnected: Bool {
-        if case .connected = state.connectionStatus { return true }
-        return false
-    }
+    private var isConnected: Bool { state.connectionStatus.isConnected }
 
     private func modeText(fan: Int, info: FanInfo) -> String {
         if state.manualFanIDs.contains(fan) { return "Manual" }

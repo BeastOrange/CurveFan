@@ -19,10 +19,7 @@ struct SettingsPageView: View {
         }
     }
 
-    private var isConnected: Bool {
-        if case .connected = state.connectionStatus { return true }
-        return false
-    }
+    private var isConnected: Bool { state.connectionStatus.isConnected }
 }
 
 private struct SettingsGeneralGroup: View {

@@ -75,10 +75,7 @@ struct PresetsView: View {
         }
     }
 
-    private var isConnected: Bool {
-        if case .connected = state.connectionStatus { return true }
-        return false
-    }
+    private var isConnected: Bool { state.connectionStatus.isConnected }
 
     private var errorBinding: Binding<Bool> {
         Binding(
@@ -199,7 +196,7 @@ private struct PresetLibraryGroup: View {
         switch selection {
         case .builtIn:
             return activePreset?.name == preset.name ||
-                (activePreset == nil && preset.name == "Auto")
+                (activePreset == nil && preset.isAuto)
         case .custom:
             return activePreset?.id == preset.id
         }
@@ -270,7 +267,7 @@ private struct PresetDetailGroup: View {
                 header
 
                 NativeMetricTable(rows: [
-                    ("Mode", preset.name == "Auto" ? "System" : "Curve"),
+                    ("Mode", preset.isAuto ? "System" : "Curve"),
                     ("Fans", "\(state.knownFanCount)"),
                     ("Range", rangeText)
                 ])
@@ -345,11 +342,11 @@ private struct PresetDetailGroup: View {
     }
 
     private var applyTitle: String {
-        preset.name == "Auto" ? "Apply Auto" : "Apply \(preset.name)"
+        preset.isAuto ? "Apply Auto" : "Apply \(preset.name)"
     }
 
     private var canApply: Bool {
-        isConnected && (preset.name == "Auto" || hasSensor)
+        isConnected && (preset.isAuto || hasSensor)
     }
 
     private var hasSensor: Bool {

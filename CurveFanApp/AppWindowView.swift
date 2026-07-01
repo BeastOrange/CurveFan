@@ -62,10 +62,7 @@ struct AppWindowView: View {
         }
     }
 
-    private var isConnected: Bool {
-        if case .connected = state.connectionStatus { return true }
-        return false
-    }
+    private var isConnected: Bool { state.connectionStatus.isConnected }
 
 }
 
