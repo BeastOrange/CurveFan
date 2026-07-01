@@ -11,6 +11,7 @@ actor SMCServer {
     private let path: String
     private let handler: CommandHandler
     private var listenFD: Int32 = -1
+    private var acceptTask: Task<Void, Never>?
 
     init(path: String, handler: CommandHandler) {
         self.path = path
@@ -50,21 +51,28 @@ actor SMCServer {
 
         // Launch the blocking accept loop off the actor's executor using a snapshot of the fd.
         let acceptFD = listenFD
-        Task.detached { [handler] in
+        acceptTask = Task.detached { [handler] in
             Self.runAcceptLoop(listenFD: acceptFD, handler: handler)
         }
     }
 
-    /// Unlinks the socket path.
     func stop() async {
+        acceptTask?.cancel()
+        acceptTask = nil
+        if listenFD >= 0 {
+            close(listenFD)
+            listenFD = -1
+        }
         unlink(path)
-        listenFD = -1
     }
 
     private static func runAcceptLoop(listenFD: Int32, handler: CommandHandler) {
-        while true {
+        while !Task.isCancelled {
             let client = accept(listenFD, nil, nil)
-            guard client >= 0 else { continue }
+            guard client >= 0 else {
+                if Task.isCancelled { return }
+                continue
+            }
             DispatchQueue.global().async { [handler] in
                 Task {
                     defer { close(client) }
