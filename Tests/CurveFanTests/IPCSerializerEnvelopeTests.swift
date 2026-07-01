@@ -24,6 +24,13 @@ final class IPCSerializerEnvelopeTests: XCTestCase {
         }
     }
 
+    func testIsCompatibleVersionAcceptsLegacyAndV1Only() {
+        XCTAssertTrue(IPCSerializer.isCompatibleVersion(0), "legacy raw-IPCCommand wire format (version 0) must stay dispatchable")
+        XCTAssertTrue(IPCSerializer.isCompatibleVersion(1), "current v1 envelope must be dispatchable")
+        XCTAssertFalse(IPCSerializer.isCompatibleVersion(2), "future v2 must be rejected until this build opts in")
+        XCTAssertFalse(IPCSerializer.isCompatibleVersion(999), "unknown future versions must be rejected")
+    }
+
     func testDecodeRequestAcceptsLegacyRawIPCCommand() throws {
         let rawData = #"{"ping":{}}"#.data(using: .utf8)!
         let payload = try IPCSerializer.decodeRequest(rawData)

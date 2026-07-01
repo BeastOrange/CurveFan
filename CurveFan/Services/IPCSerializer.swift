@@ -3,6 +3,18 @@ import Foundation
 public enum IPCSerializer {
     public static let protocolVersion = 1
 
+    /// Wire versions the helper will accept. 0 is the legacy raw-IPCCommand
+    /// format (no envelope); anything >= 1 is a versioned envelope.
+    public static let compatibleVersions: Set<Int> = [0, 1]
+
+    /// Returns true if `version` is one this build will dispatch. The helper
+    /// invokes this before running any command so an unknown future client
+    /// receives an explicit rejection instead of having its command silently
+    /// dispatched as if it were v1.
+    public static func isCompatibleVersion(_ version: Int) -> Bool {
+        compatibleVersions.contains(version)
+    }
+
     public static func encode(_ command: IPCCommand) throws -> Data {
         let cmdData = try JSONEncoder().encode(command)
         guard let cmdObject = try JSONSerialization.jsonObject(with: cmdData) as? [String: Any] else {
