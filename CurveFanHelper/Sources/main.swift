@@ -28,17 +28,17 @@ if fakeSMC {
 
 let handler = CommandHandler(smc: smc, fakeSMC: fakeSMC)
 let server = SMCServer(path: socketPath, handler: handler)
-server.start()
+Task { await server.start() }
 
 let signals = SignalHandling(queue: .global(qos: .userInitiated))
-signals.install {
-    server.stop()
-    let sem = DispatchSemaphore(value: 0)
-    Task {
-        await handler.restoreAllFansForCleanup()
-        sem.signal()
+Task {
+    await signals.install { @Sendable in
+        Task {
+            await server.stop()
+            await handler.restoreAllFansForCleanup()
+            exit(0)
+        }
     }
-    sem.wait()
 }
 
 RunLoop.main.run()

@@ -7,7 +7,7 @@ import CurveFanCore
 import Darwin
 import os
 
-final class SMCServer: @unchecked Sendable {
+actor SMCServer {
     private let path: String
     private let handler: CommandHandler
     private var listenFD: Int32 = -1
@@ -17,7 +17,7 @@ final class SMCServer: @unchecked Sendable {
         self.handler = handler
     }
 
-    /// Opens the listening socket and starts the accept loop on a background queue.
+    /// Opens the listening socket and starts the accept loop.
     /// Fatal on socket/bind/listen failure (same as original behavior).
     func start() {
         unlink(path)
@@ -48,17 +48,20 @@ final class SMCServer: @unchecked Sendable {
         guard listen(fd, 5) == 0 else { fatalError("listen() failed") }
         os_log(.info, "listening on %{public}@", path)
 
-        DispatchQueue.global().async { [self] in
-            acceptLoop()
+        // Launch the blocking accept loop off the actor's executor using a snapshot of the fd.
+        let acceptFD = listenFD
+        Task.detached { [handler] in
+            Self.runAcceptLoop(listenFD: acceptFD, handler: handler)
         }
     }
 
-    /// Unlinks the socket path. Safe to call from any queue.
-    func stop() {
+    /// Unlinks the socket path.
+    func stop() async {
         unlink(path)
+        listenFD = -1
     }
 
-    private func acceptLoop() {
+    private static func runAcceptLoop(listenFD: Int32, handler: CommandHandler) {
         while true {
             let client = accept(listenFD, nil, nil)
             guard client >= 0 else { continue }

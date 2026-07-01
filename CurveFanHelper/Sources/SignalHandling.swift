@@ -5,7 +5,7 @@
 import Foundation
 import Darwin
 
-final class SignalHandling: @unchecked Sendable {
+actor SignalHandling {
     private let queue: DispatchQueue
     private var cleanup: (() -> Void)?
     private var installed = false
@@ -15,10 +15,7 @@ final class SignalHandling: @unchecked Sendable {
         self.queue = queue
     }
 
-    /// Registers a cleanup closure to run when SIGTERM or SIGINT is delivered.
-    /// The closure runs on the queue passed to init; it is never invoked inside
-    /// the raw signal handler. Calling install more than once is a programmer error.
-    func install(using perform: @escaping () -> Void) {
+    func install(using perform: @Sendable @escaping () -> Void) async {
         precondition(!installed, "SignalHandling.install must only be called once")
         installed = true
         cleanup = perform
@@ -26,17 +23,16 @@ final class SignalHandling: @unchecked Sendable {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: queue)
             source.setEventHandler { [weak self] in
-                self?.fire()
+                Task { await self?.fire() }
             }
             source.resume()
             sources.append(source)
         }
     }
 
-    private func fire() {
+    private func fire() async {
         let work = cleanup
         cleanup = nil
         work?()
-        exit(0)
     }
 }
