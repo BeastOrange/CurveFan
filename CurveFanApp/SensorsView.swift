@@ -109,7 +109,7 @@ private struct SensorSummaryItem: View {
                     .font(.title.weight(.semibold))
                     .monospacedDigit()
             }
-            .padding(6)
+            .padding(DesignTokens.Spacing.card)
             .frame(maxWidth: .infinity, minHeight: 76)
         }
     }

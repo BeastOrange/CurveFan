@@ -17,8 +17,8 @@ struct ModeAndPresetSection: View {
                 Text("CurveFan").tag(1)
             }
             .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, DesignTokens.Spacing.menuBarHeaderH)
+            .padding(.vertical, DesignTokens.Spacing.menuBarHeaderV)
 
             if controlState.isCurveFanControl || controlState == .externalManual {
                 Divider()
