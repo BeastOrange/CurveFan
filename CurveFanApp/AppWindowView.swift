@@ -26,9 +26,22 @@ struct AppWindowView: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
+        .onAppear { consumePendingSelection() }
         .onChange(of: state.pendingSectionSelection) { _, newValue in
             guard let newValue else { return }
             selectedSection = newValue
+            state.pendingSectionSelection = nil
+        }
+    }
+
+    /// Applies any pending sidebar selection exactly once when the view first
+    /// appears. `.onChange` does not fire for the initial value, so a freshly
+    /// opened main window would otherwise ignore a `pendingSectionSelection`
+    /// that was set before the window existed (e.g. menu-bar "Settings" tap
+    /// while the main window was closed).
+    private func consumePendingSelection() {
+        if let pending = state.pendingSectionSelection {
+            selectedSection = pending
             state.pendingSectionSelection = nil
         }
     }
