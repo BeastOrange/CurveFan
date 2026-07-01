@@ -239,7 +239,7 @@ final class AppState: ObservableObject {
 
     func applyPreset(_ preset: Preset) async {
         activePreset = preset
-        if preset.name == "Auto" {
+        if preset.isAuto {
             await restoreAuto()
             return
         }
@@ -256,7 +256,7 @@ final class AppState: ObservableObject {
         temperatures.first(where: { $0.group == .cpu })?.key ?? temperatures.first?.key ?? ""
     }
     var isCurveFanControlActive: Bool {
-        isManualMode || (activePreset?.name != nil && activePreset?.name != "Auto")
+        isManualMode || (activePreset?.isAuto == false)
     }
 
     func formatTemp(_ value: Double) -> String { formatter.format(value, useFahrenheit: useFahrenheit) }

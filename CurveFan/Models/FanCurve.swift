@@ -172,6 +172,8 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         self.createdAt = createdAt
     }
 
+    public var isAuto: Bool { name == "Auto" }
+
     public static let auto = Preset(name: "Auto", fanToCurve: [:], fanToSensor: [:])
 
     public static func quiet(maxRPM: Int) -> Preset {
