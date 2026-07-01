@@ -19,6 +19,17 @@ struct CurveFanApp: App {
                 .task { appDelegate.setupStatusItem(state: state, coordinator: windowCoordinator) }
         }
         .defaultSize(width: 1280, height: 760)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    state.pendingSectionSelection = .settings
+                    windowCoordinator.openMainWindow()
+                    NSApplication.shared.setActivationPolicy(.regular)
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
 }
 
