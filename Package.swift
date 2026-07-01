@@ -32,6 +32,7 @@ let package = Package(
             path: "CurveFanApp",
             linkerSettings: [
                 .linkedFramework("SwiftUI"),
+                .linkedFramework("Charts"),
             ]
         ),
         .executableTarget(
