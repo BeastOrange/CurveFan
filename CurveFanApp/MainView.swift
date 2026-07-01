@@ -4,7 +4,7 @@ import CurveFanCore
 
 struct MainView: View {
     @ObservedObject var state: AppState
-    // openWindow is unavailable in NSHostingView; use the global bridge set by OpenWindowCapture
+    @Environment(\.windowCoordinator) private var windowCoordinator
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,11 +64,7 @@ struct MainView: View {
             FooterToolbar(
                 onOpenWindow: {
                     NSApplication.shared.setActivationPolicy(.regular)
-                    if let win = curveFanMainWindow {
-                        win.makeKeyAndOrderFront(nil)
-                    } else {
-                        curveFanOpenWindow?("main")
-                    }
+                    windowCoordinator.openMainWindow()
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 },
                 onSettings: showSettings,

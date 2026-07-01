@@ -7,15 +7,16 @@ import CurveFanCore
 struct CurveFanApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
     @StateObject private var state = AppState()
+    @StateObject private var windowCoordinator = WindowCoordinator()
 
     var body: some Scene {
         WindowGroup("CurveFan", id: "main") {
             AppWindowView(state: state)
                 .frame(minWidth: 1180, minHeight: 720)
-                .background(MainWindowLifecycle())
-                // Capture openWindow action and set up status item once.
+                .background(MainWindowLifecycle(coordinator: windowCoordinator))
                 .background(OpenWindowCapture())
-                .task { appDelegate.setupStatusItem(state: state) }
+                .environment(\.windowCoordinator, windowCoordinator)
+                .task { appDelegate.setupStatusItem(state: state, coordinator: windowCoordinator) }
         }
         .defaultSize(width: 1280, height: 760)
 
@@ -39,26 +40,30 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Called from the WindowGroup .task once AppState is ready.
-    func setupStatusItem(state: AppState) {
+    func setupStatusItem(state: AppState, coordinator: WindowCoordinator) {
         guard statusItemController == nil else { return }
-        statusItemController = StatusItemController(state: state)
+        statusItemController = StatusItemController(state: state, coordinator: coordinator)
     }
 }
 
-/// Captures the SwiftUI openWindow action into a global so NSHostingView-hosted
-/// views (the menu bar panel) can open the main window without an Environment.
+/// Captures the SwiftUI openWindow action into the WindowCoordinator so
+/// NSHostingView-hosted views (the menu bar panel) can open the main window.
 private struct OpenWindowCapture: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.windowCoordinator) private var coordinator
     var body: some View {
         Color.clear.onAppear {
-            curveFanOpenWindow = { id in openWindow(id: id) }
+            coordinator.openWindow = { id in openWindow(id: id) }
         }
     }
 }
 
 struct MainWindowLifecycle: NSViewRepresentable {
+    let coordinator: WindowCoordinator
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
+        context.coordinator.windowCoordinator = coordinator
         Task { @MainActor in
             guard let window = view.window else { return }
             context.coordinator.observe(window: window)
@@ -67,6 +72,7 @@ struct MainWindowLifecycle: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.windowCoordinator = coordinator
         Task { @MainActor in
             guard let window = nsView.window else { return }
             context.coordinator.observe(window: window)
@@ -80,6 +86,7 @@ struct MainWindowLifecycle: NSViewRepresentable {
     final class Coordinator {
         private weak var observedWindow: NSWindow?
         private var closeObserver: NSObjectProtocol?
+        var windowCoordinator: WindowCoordinator?
 
         deinit {
             if let closeObserver {
@@ -94,15 +101,16 @@ struct MainWindowLifecycle: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(closeObserver)
             }
             observedWindow = window
-            curveFanMainWindow = window          // expose for menu bar panel
+            windowCoordinator?.mainWindow = window
             NSApplication.shared.setActivationPolicy(.regular)
+            let wc = windowCoordinator
             closeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
                 object: window,
                 queue: .main
             ) { _ in
                 Task { @MainActor in
-                    curveFanMainWindow = nil
+                    wc?.mainWindow = nil
                     NSApplication.shared.setActivationPolicy(.accessory)
                 }
             }
