@@ -26,6 +26,11 @@ struct AppWindowView: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: state.pendingSectionSelection) { _, newValue in
+            guard let newValue else { return }
+            selectedSection = newValue
+            state.pendingSectionSelection = nil
+        }
     }
 
     @ViewBuilder

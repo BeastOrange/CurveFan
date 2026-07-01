@@ -130,13 +130,10 @@ struct MainView: View {
     }
 
     private func showSettings() {
+        state.pendingSectionSelection = .settings
+        windowCoordinator.openMainWindow()
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
-        if #available(macOS 14, *) {
-            NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApplication.shared.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
     }
 }
 
@@ -161,7 +158,7 @@ private struct MetricPill: View {
     }
 }
 
-// MARK: - MenuControlState & SettingsView (unchanged)
+// MARK: - MenuControlState
 enum MenuControlState: Equatable {
     case offline, system, curve(String), manual, externalManual
 
@@ -200,35 +197,5 @@ enum MenuControlState: Equatable {
         case .manual: return .orange
         case .externalManual: return .orange
         }
-    }
-}
-
-struct SettingsView: View {
-    @ObservedObject var state: AppState
-
-    var body: some View {
-        TabView {
-            Form {
-                Toggle("Fahrenheit", isOn: $state.useFahrenheit)
-                Picker("Polling interval", selection: $state.pollingInterval) {
-                    Text("1 second").tag(1.0)
-                    Text("2 seconds").tag(2.0)
-                    Text("5 seconds").tag(5.0)
-                }
-            }
-            .tabItem { Text("General") }
-            .padding()
-
-            Form {
-                Section("About") {
-                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-                    LabeledContent("Version", value: "CurveFan \(version)")
-                    LabeledContent("License", value: "MIT")
-                }
-            }
-            .tabItem { Text("About") }
-            .padding()
-        }
-        .frame(width: 360, height: 200)
     }
 }

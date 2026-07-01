@@ -19,10 +19,6 @@ struct CurveFanApp: App {
                 .task { appDelegate.setupStatusItem(state: state, coordinator: windowCoordinator) }
         }
         .defaultSize(width: 1280, height: 760)
-
-        Settings {
-            SettingsView(state: state)
-        }
     }
 }
 
@@ -132,6 +128,8 @@ final class AppState: ObservableObject {
     @Published var showMenuBarRPM = true
     @Published var rpmHistory: [RPMHistorySample] = []
     @Published var lastPollDate: Date?
+    /// Set by menu bar panel / external callers to request a sidebar navigation in the main window; observed by AppWindowView and cleared after consumption.
+    @Published var pendingSectionSelection: AppSection? = nil
 
     private let controller = FanController.shared
     private let ipc = IPCClient.shared
