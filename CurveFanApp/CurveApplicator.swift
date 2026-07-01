@@ -1,5 +1,6 @@
 import Foundation
 import CurveFanCore
+import os
 
 /// Owns active fan curves, effective-temperature tracking, and the rate-limited
 /// curve-evaluation + SMC-write engine that drives preset-based fan control.
@@ -65,7 +66,7 @@ final class CurveApplicator {
             do {
                 try await controller.unlockAndSetRPM(fan, rpm: limitedTarget)
             } catch {
-                NSLog("CurveFan curve control failed: \(error.localizedDescription)")
+                os_log(.error, "CurveFan curve control failed: %{public}@", error.localizedDescription)
             }
         }
     }

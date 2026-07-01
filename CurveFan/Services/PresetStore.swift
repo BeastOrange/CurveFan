@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public actor PresetStore {
     public static let shared = PresetStore()
@@ -17,7 +18,7 @@ public actor PresetStore {
         do {
             files = try FileManager.default.contentsOfDirectory(at: presetsDir, includingPropertiesForKeys: nil)
         } catch {
-            NSLog("CurveFan preset listing failed: \(error.localizedDescription)")
+            os_log(.error, "CurveFan preset listing failed: %{public}@", error.localizedDescription)
             return []
         }
         let loaded = files.compactMap { url -> Preset? in
@@ -25,7 +26,7 @@ public actor PresetStore {
                 let data = try Data(contentsOf: url)
                 return try JSONDecoder().decode(Preset.self, from: data)
             } catch {
-                NSLog("CurveFan preset load failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                os_log(.error, "CurveFan preset load failed for %{public}@: %{public}@", url.lastPathComponent, error.localizedDescription)
                 return nil
             }
         }
