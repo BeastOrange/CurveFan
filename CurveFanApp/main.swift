@@ -133,30 +133,26 @@ final class AppState: ObservableObject {
     @Published var rpmHistory: [RPMHistorySample] = []
     @Published var lastPollDate: Date?
 
-    private let reader = TemperatureReader.shared
     private let controller = FanController.shared
     private let ipc = IPCClient.shared
-    private var pollTask: Task<Void, Never>?
+    private let pollingController = PollingController()
+    private let curveApplicator = CurveApplicator()
+    private lazy var presetActions = PresetActions(state: self, curveApplicator: curveApplicator)
+    private let formatter = TempFormatter()
     private var presetCancellable: AnyCancellable?
-    /// Active fan curve driven by the poll loop, keyed by fan index. Empty when
-    /// no preset curve is running.
-    private var activeCurves: [Int: (curve: FanCurve, sensorKey: String)] = [:]
-    private var curveEffectiveTemperatures: [Int: Double] = [:]
-    private let maxCurveRPMChangePerSecond = 600
-    private let maxCurveTemperatureChangePerSecond = 3.0
 
     init() {
         presetCancellable = PresetManager.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
         Task { await checkDaemon() }
+        Task { await controller.observeWakeEvents(from: NSWorkspaceWakeEventSource()) }
     }
 
     func checkDaemon() async {
-        // First launch: install helper if not present.
         if !HelperInstaller.isInstalled {
             guard HelperInstaller.installIfNeeded() else { return }
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // let daemon start
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
         }
         if await ipc.ping() {
             connectionStatus = .connected
@@ -167,75 +163,36 @@ final class AppState: ObservableObject {
     }
 
     func startPolling() {
-        pollTask?.cancel()
-        pollTask = Task {
-            let stream = await reader.stream(interval: pollingInterval)
-            for await readings in stream {
-                temperatures = readings
-                do {
-                    let info = try await controller.getFanInfo(0)
-                    fanInfo[0] = info
-                    let count = max(info.fanCount, 1)
-                    if count > 1 {
-                        for fan in 1..<count {
-                            if let fanInfo = try? await controller.getFanInfo(fan) {
-                                self.fanInfo[fan] = fanInfo
-                            }
-                        }
-                    }
-                    fanInfo = fanInfo.filter { $0.key < count }
-                    lastPollDate = Date()
-                    appendRPMHistory(info.actualRPM)
-                    if manualRPM == 0 {
-                        manualRPM = info.actualRPM
-                    }
-                    await applyActiveCurves()
-                } catch {
-                    connectionStatus = .disconnected
-                }
-            }
+        pollingController.start(interval: pollingInterval) { [weak self] readings in
+            await self?.handlePollTick(readings)
         }
     }
 
-    /// Drives any active preset curves from the temperatures and fan info already
-    /// fetched this poll cycle, so curve control adds no extra SMC round trips.
-    private func applyActiveCurves() async {
-        guard !activeCurves.isEmpty else { return }
-        for (fan, entry) in activeCurves {
-            guard let info = fanInfo[fan],
-                  let temp = temperatures.first(where: { $0.key == entry.sensorKey })?.value else {
-                continue
+    private func handlePollTick(_ readings: [TemperatureReading]) async {
+        temperatures = readings
+        do {
+            let info = try await controller.getFanInfo(0)
+            fanInfo[0] = info
+            let count = max(info.fanCount, 1)
+            if count > 1 {
+                for fan in 1..<count {
+                    if let fanInfo = try? await controller.getFanInfo(fan) {
+                        self.fanInfo[fan] = fanInfo
+                    }
+                }
             }
-            let effectiveTemperature = FanCurve.rateLimitedTemperature(
-                current: curveEffectiveTemperatures[fan] ?? temp,
-                target: temp,
-                interval: pollingInterval,
-                maxChangePerSecond: maxCurveTemperatureChangePerSecond
-            )
-            curveEffectiveTemperatures[fan] = effectiveTemperature
-
-            let target = entry.curve.rpm(
-                for: effectiveTemperature,
-                minRPM: Int(info.minRPM),
-                maxRPM: Int(info.maxRPM)
-            )
-            guard target > 0 else {
-                curveEffectiveTemperatures[fan] = nil
-                await controller.restoreAutoLogging(fan)
-                continue
+            fanInfo = fanInfo.filter { $0.key < count }
+            lastPollDate = Date()
+            appendRPMHistory(info.actualRPM)
+            if manualRPM == 0 {
+                manualRPM = info.actualRPM
             }
-            let current = Int(info.actualRPM)
-            let limitedTarget = FanCurve.rateLimitedRPM(
-                current: current,
-                target: target,
-                interval: pollingInterval,
-                maxRPMChangePerSecond: maxCurveRPMChangePerSecond
-            )
-            do {
-                try await controller.unlockAndSetRPM(fan, rpm: limitedTarget)
-            } catch {
-                NSLog("CurveFan curve control failed: \(error.localizedDescription)")
-            }
+            await curveApplicator.applyActiveCurves(
+                temperatures: temperatures,
+                fanInfo: fanInfo,
+                pollingInterval: pollingInterval)
+        } catch {
+            connectionStatus = .disconnected
         }
     }
 
@@ -247,60 +204,21 @@ final class AppState: ObservableObject {
         }
     }
 
-    func setManualRPM(_ rpm: Double) async {
-        await setManualRPM(rpm, fan: 0)
-    }
-
-    func setManualRPM(_ rpm: Double, fan: Int) async {
-        do {
-            try await controller.unlockAndSetRPM(fan, rpm: Int(rpm))
-            activeCurves[fan] = nil
-            curveEffectiveTemperatures[fan] = nil
-            manualFanIDs.insert(fan)
-            isManualMode = true
-            if fan == 0 {
-                manualRPM = rpm
-            }
-            if let info = try? await controller.getFanInfo(fan) {
-                fanInfo[fan] = info
-            }
-        } catch {
-            connectionStatus = .error(error.localizedDescription)
-        }
-    }
+    func setManualRPM(_ rpm: Double) async { await setManualRPM(rpm, fan: 0) }
+    func setManualRPM(_ rpm: Double, fan: Int) async { await presetActions.setManualRPM(rpm, fan: fan) }
 
     func restoreAuto() async {
-        for fan in 0..<knownFanCount {
-            await restoreAuto(fan: fan)
-        }
+        await presetActions.restoreAuto(knownFanCount: knownFanCount)
         activePreset = .auto
     }
-
     func restoreAuto(fan: Int) async {
-        activeCurves[fan] = nil
-        curveEffectiveTemperatures[fan] = nil
-        manualFanIDs.remove(fan)
-        isManualMode = !manualFanIDs.isEmpty
-        if fan == 0 {
-            activePreset = .auto
-        }
-        await controller.restoreAutoLogging(fan)
-        if let info = try? await controller.getFanInfo(fan) {
-            fanInfo[fan] = info
-        }
+        await presetActions.restoreAuto(fan: fan)
+        if fan == 0 { activePreset = .auto }
     }
 
     func restoreAutoForShutdown() async {
-        pollTask?.cancel()
-        pollTask = nil
-        isManualMode = false
-        manualFanIDs.removeAll()
-        activeCurves.removeAll()
-        curveEffectiveTemperatures.removeAll()
-        activePreset = .auto
-        for fan in 0..<knownFanCount {
-            await controller.restoreAutoLogging(fan)
-        }
+        pollingController.stop()
+        await presetActions.restoreAutoForShutdown(knownFanCount: knownFanCount)
     }
 
     func quitAfterRestoringAuto() {
@@ -316,64 +234,24 @@ final class AppState: ObservableObject {
             await restoreAuto()
             return
         }
-        guard let fallbackCurve = preset.fanToCurve[0] else { return }
-        let fallbackSensorKey = preset.fanToSensor[0] ?? fallbackCurve.sensorKey
-        guard !fallbackSensorKey.isEmpty else {
-            connectionStatus = .error("No readable temperature sensor for preset")
-            return
-        }
-
-        for fan in 0..<knownFanCount {
-            let curve = preset.fanToCurve[fan] ?? fallbackCurve
-            let sensorKey = preset.fanToSensor[fan] ?? curve.sensorKey
-            guard !sensorKey.isEmpty else {
-                connectionStatus = .error("No readable temperature sensor for preset")
-                return
-            }
-            manualFanIDs.remove(fan)
-            activeCurves[fan] = (curve: curve, sensorKey: sensorKey)
-            curveEffectiveTemperatures[fan] = temperatures.first(where: { $0.key == sensorKey })?.value
-        }
-        isManualMode = !manualFanIDs.isEmpty
+        await presetActions.applyPreset(preset, knownFanCount: knownFanCount, temperatures: temperatures)
     }
 
     var maxRPM: Double { fanInfo[0]?.maxRPM ?? 7200 }
     var minRPM: Double { fanInfo[0]?.minRPM ?? 1200 }
-    var knownFanCount: Int {
-        max(fanInfo.values.map(\.fanCount).max() ?? 1, 1)
-    }
-    var presets: [Preset] {
-        builtInPresets + customPresets
-    }
-
-    var builtInPresets: [Preset] {
-        PresetManager.shared.defaults(maxRPM: Int(maxRPM), sensorKey: defaultSensorKey)
-    }
-
-    var customPresets: [Preset] {
-        PresetManager.shared.presets
-    }
-
+    var knownFanCount: Int { max(fanInfo.values.map(\.fanCount).max() ?? 1, 1) }
+    var presets: [Preset] { builtInPresets + customPresets }
+    var builtInPresets: [Preset] { PresetManager.shared.defaults(maxRPM: Int(maxRPM), sensorKey: defaultSensorKey) }
+    var customPresets: [Preset] { PresetManager.shared.presets }
     var defaultSensorKey: String {
-        temperatures.first(where: { $0.group == .cpu })?.key ??
-            temperatures.first?.key ??
-            ""
+        temperatures.first(where: { $0.group == .cpu })?.key ?? temperatures.first?.key ?? ""
     }
-
-    func formatTemp(_ value: Double) -> String {
-        let v = useFahrenheit ? value * 9 / 5 + 32 : value
-        return String(format: "%.0f°%@", v, useFahrenheit ? "F" : "C")
-    }
-
-    func tempColor(_ value: Double) -> Color {
-        if value < 50 { return .green }
-        if value < 80 { return .orange }
-        return .red
-    }
-
     var isCurveFanControlActive: Bool {
         isManualMode || (activePreset?.name != nil && activePreset?.name != "Auto")
     }
+
+    func formatTemp(_ value: Double) -> String { formatter.format(value, useFahrenheit: useFahrenheit) }
+    func tempColor(_ value: Double) -> Color { formatter.color(for: value) }
 
     private func appendRPMHistory(_ rpm: Double) {
         rpmHistory.append(RPMHistorySample(date: Date(), rpm: rpm))
