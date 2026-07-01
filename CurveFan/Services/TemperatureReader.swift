@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public struct TemperatureReading: Identifiable, Sendable {
     public let id = UUID()
@@ -11,7 +12,11 @@ public struct TemperatureReading: Identifiable, Sendable {
 
 public actor TemperatureReader {
     public static let shared = TemperatureReader()
-    private let ipc = IPCClient.shared
+    private let ipc: IPCClient
+
+    public init(ipc: IPCClient = .shared) {
+        self.ipc = ipc
+    }
 
     public func readings(for chip: ChipGen) async -> [TemperatureReading] {
         let defs = SMCKeyDB.keys(for: .cpu, chip: chip) +
@@ -32,7 +37,7 @@ public actor TemperatureReader {
         return defs.compactMap { def -> TemperatureReading? in
             guard let raw = batch[def.key] else { return nil }
             guard let value = try? SMCDecoder.shared.decode(rawValue: raw.dataType, bytes: raw.data) else {
-                NSLog("CurveFan temperature decode failed for \(def.key)")
+                os_log(.error, "CurveFan temperature decode failed for %{public}@", def.key)
                 return nil
             }
             return TemperatureReading(key: def.key, name: def.name, group: def.group, value: value, timestamp: now)
@@ -55,19 +60,32 @@ public actor TemperatureReader {
     }
 
     private func batchRead(keys: [String]) async -> [String: SMCKeyData]? {
-        guard let resp = try? await ipc.send(.readKeysData(keys: keys)),
-              resp.success, let batch = resp.batch else { return nil }
-        return batch
+        do {
+            let resp = try await ipc.send(.readKeysData(keys: keys))
+            guard resp.success, let batch = resp.batch else { return nil }
+            return batch
+        } catch {
+            os_log(.error, "CurveFan batch temperature read failed: %{public}@", error.localizedDescription)
+            return nil
+        }
     }
 
     private func legacyReadings(defs: [SMCKeyDefinition]) async -> [TemperatureReading] {
         let now = Date()
         var results: [TemperatureReading] = []
         for def in defs {
-            guard let resp = try? await ipc.send(.readKeyData(key: def.key)),
-                  resp.success, let bytes = resp.data, let dataType = resp.dataType,
-                  let value = try? SMCDecoder.shared.decode(rawValue: dataType, bytes: bytes) else { continue }
-            results.append(TemperatureReading(key: def.key, name: def.name, group: def.group, value: value, timestamp: now))
+            do {
+                let resp = try await ipc.send(.readKeyData(key: def.key))
+                guard resp.success, let bytes = resp.data, let dataType = resp.dataType else {
+                    os_log(.error, "CurveFan legacy temperature read failed for %{public}@: no data", def.key)
+                    continue
+                }
+                let value = try SMCDecoder.shared.decode(rawValue: dataType, bytes: bytes)
+                results.append(TemperatureReading(key: def.key, name: def.name, group: def.group, value: value, timestamp: now))
+            } catch {
+                os_log(.error, "CurveFan legacy temperature read/decode failed for %{public}@: %{public}@", def.key, error.localizedDescription)
+                continue
+            }
         }
         return results
     }
