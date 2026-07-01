@@ -76,7 +76,7 @@ struct OverviewView: View {
         guard let reading = state.temperatures.first(where: { $0.group == group }) else {
             return "--"
         }
-        return state.formatTemp(reading.value)
+        return TempFormatter().format(reading.value, useFahrenheit: state.useFahrenheit)
     }
 }
 

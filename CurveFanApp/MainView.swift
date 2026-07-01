@@ -123,7 +123,7 @@ struct MainView: View {
 
     private func formatSensorText(group: SensorGroup) -> String {
         guard let r = state.temperatures.first(where: { $0.group == group }) else { return "--" }
-        return state.formatTemp(r.value)
+        return TempFormatter().format(r.value, useFahrenheit: state.useFahrenheit)
     }
 
     private func showSettings() {

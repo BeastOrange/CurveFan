@@ -147,7 +147,6 @@ final class AppState: ObservableObject {
     private let pollingController = PollingController()
     private let curveApplicator = CurveApplicator()
     private lazy var presetActions = PresetActions(state: self, curveApplicator: curveApplicator)
-    private let formatter = TempFormatter()
     private var presetCancellable: AnyCancellable?
 
     init() {
@@ -258,9 +257,6 @@ final class AppState: ObservableObject {
     var isCurveFanControlActive: Bool {
         isManualMode || (activePreset?.isAuto == false)
     }
-
-    func formatTemp(_ value: Double) -> String { formatter.format(value, useFahrenheit: useFahrenheit) }
-    func tempColor(_ value: Double) -> Color { formatter.color(for: value) }
 
     private func appendRPMHistory(_ rpm: Double) {
         rpmHistory.append(RPMHistorySample(date: Date(), rpm: rpm))
