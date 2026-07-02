@@ -166,7 +166,7 @@ struct RPMTrendChart: View {
     }
 
     private var timeWindow: TimeInterval {
-        max(pollingInterval * 48, pollingInterval)
+        max(pollingInterval * TimeInterval(RPMHistoryChartConfig.visibleIntervals), pollingInterval)
     }
 
     private func drawChart(context: GraphicsContext, size: CGSize, now: Date) {
@@ -245,14 +245,28 @@ struct RPMTrendChart: View {
 
     private func plottedPoints(in rect: CGRect, now: Date, latestValue: Double) -> [CGPoint] {
         let lowerBound = now.addingTimeInterval(-timeWindow)
-        return displaySamples(now: now, latestValue: latestValue)
-            .filter { $0.date >= lowerBound }
+        return visibleSamples(lowerBound: lowerBound, now: now, latestValue: latestValue)
             .map { sample in
                 CGPoint(
                     x: xPosition(for: sample.date, now: now, lowerBound: lowerBound, rect: rect),
                     y: yPosition(for: sample.rpm, rect: rect)
                 )
             }
+    }
+
+    private func visibleSamples(
+        lowerBound: Date,
+        now: Date,
+        latestValue: Double
+    ) -> [DisplayRPMPoint] {
+        let samples = displaySamples(now: now, latestValue: latestValue)
+        guard !samples.isEmpty else { return [] }
+
+        var visible = samples.filter { $0.date > lowerBound }
+        if let boundary = leftBoundarySample(lowerBound: lowerBound, samples: samples) {
+            visible.insert(boundary, at: 0)
+        }
+        return visible
     }
 
     private func displaySamples(now: Date, latestValue: Double) -> [DisplayRPMPoint] {
@@ -274,6 +288,30 @@ struct RPMTrendChart: View {
             DisplayRPMPoint(date: start, rpm: baseRPM),
             DisplayRPMPoint(date: end, rpm: latestValue)
         ]
+    }
+
+    private func leftBoundarySample(
+        lowerBound: Date,
+        samples: [DisplayRPMPoint]
+    ) -> DisplayRPMPoint? {
+        guard let firstAfterIndex = samples.firstIndex(where: { $0.date > lowerBound }) else {
+            return samples.last.map { DisplayRPMPoint(date: lowerBound, rpm: $0.rpm) }
+        }
+
+        if firstAfterIndex == 0 {
+            return DisplayRPMPoint(date: lowerBound, rpm: samples[0].rpm)
+        }
+
+        let previous = samples[firstAfterIndex - 1]
+        let next = samples[firstAfterIndex]
+        let interval = next.date.timeIntervalSince(previous.date)
+        guard interval > 0 else {
+            return DisplayRPMPoint(date: lowerBound, rpm: next.rpm)
+        }
+
+        let progress = min(max(lowerBound.timeIntervalSince(previous.date) / interval, 0), 1)
+        let rpm = previous.rpm + (next.rpm - previous.rpm) * progress
+        return DisplayRPMPoint(date: lowerBound, rpm: rpm)
     }
 
     private func drawGrid(context: GraphicsContext, rect: CGRect) {

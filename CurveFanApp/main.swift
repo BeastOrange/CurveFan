@@ -287,10 +287,16 @@ final class AppState: ObservableObject {
 
     private func appendRPMHistory(_ rpm: Double) {
         rpmHistory.append(RPMHistorySample(date: Date(), rpm: rpm))
-        if rpmHistory.count > 48 {
-            rpmHistory.removeFirst(rpmHistory.count - 48)
+        if rpmHistory.count > RPMHistoryChartConfig.retainedSamples {
+            rpmHistory.removeFirst(rpmHistory.count - RPMHistoryChartConfig.retainedSamples)
         }
     }
+}
+
+enum RPMHistoryChartConfig {
+    static let visibleIntervals = 48
+    // Keep one extra sample so the chart can interpolate the sliding window's left edge.
+    static let retainedSamples = visibleIntervals + 1
 }
 
 struct RPMHistorySample: Identifiable, Equatable {
