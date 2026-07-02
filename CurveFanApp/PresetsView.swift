@@ -15,7 +15,8 @@ struct PresetsView: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 PageHeader(
                     subtitle: "Native macOS preset management",
-                    isConnected: isConnected
+                    isConnected: isConnected,
+                    onRetry: { Task { await state.reconnect() } }
                 )
 
                 HStack(alignment: .top, spacing: DesignTokens.Spacing.section) {

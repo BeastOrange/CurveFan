@@ -9,7 +9,8 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 PageHeader(
                     subtitle: "Apple Silicon thermal and fan control",
-                    isConnected: isConnected
+                    isConnected: isConnected,
+                    onRetry: { Task { await state.reconnect() } }
                 )
 
                 OverviewSummaryGroup(

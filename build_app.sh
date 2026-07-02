@@ -25,10 +25,21 @@ chmod 755 "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 # Embed the privileged helper so the app can self-install on first launch.
 HELPER_BIN=".build/${CONFIGURATION}/CurveFanHelper"
-if [ -f "$HELPER_BIN" ]; then
-    cp "$HELPER_BIN" "$APP_DIR/Contents/Resources/CurveFanHelper"
-    chmod 755 "$APP_DIR/Contents/Resources/CurveFanHelper"
+if [ ! -x "$HELPER_BIN" ]; then
+    echo "error: cannot find helper executable at $HELPER_BIN" >&2
+    exit 1
 fi
+cp "$HELPER_BIN" "$APP_DIR/Contents/Resources/CurveFanHelper"
+chmod 755 "$APP_DIR/Contents/Resources/CurveFanHelper"
+
+for script in setup.sh uninstall.sh; do
+    if [ ! -f "$script" ]; then
+        echo "error: cannot find required resource script $script" >&2
+        exit 1
+    fi
+    cp "$script" "$APP_DIR/Contents/Resources/$script"
+    chmod 755 "$APP_DIR/Contents/Resources/$script"
+done
 
 if [ -f "$ICON_SOURCE" ]; then
     rm -rf "$ICONSET_DIR"

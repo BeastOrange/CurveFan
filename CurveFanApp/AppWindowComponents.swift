@@ -4,6 +4,7 @@ import CurveFanCore
 struct PageHeader: View {
     let subtitle: String
     let isConnected: Bool
+    var onRetry: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -11,16 +12,17 @@ struct PageHeader: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
             Spacer()
-            ConnectionStatusPill(isConnected: isConnected)
+            ConnectionStatusPill(isConnected: isConnected, onRetry: onRetry)
         }
     }
 }
 
 struct ConnectionStatusPill: View {
     let isConnected: Bool
+    var onRetry: (() -> Void)? = nil
 
     var body: some View {
-        Label {
+        let label = Label {
             Text(isConnected ? "Connected" : "Offline")
                 .font(.callout.weight(.semibold))
         } icon: {
@@ -32,7 +34,13 @@ struct ConnectionStatusPill: View {
         .padding(.horizontal, 12)
         .frame(height: 28)
         .background(.regularMaterial, in: Capsule())
-        .help(isConnected ? "Helper is connected" : "Helper is offline")
+        .help(isConnected ? "Helper is connected" : "Tap to retry connecting to helper")
+
+        if !isConnected, let onRetry {
+            label.onTapGesture { onRetry() }
+        } else {
+            label
+        }
     }
 }
 

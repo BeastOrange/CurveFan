@@ -8,6 +8,16 @@ private struct FailingTransport: IPCTransport {
     }
 }
 
+private struct LegacyPingOnlyTransport: IPCTransport {
+    func roundTrip(_ data: Data) async throws -> Data {
+        let request = String(data: data, encoding: .utf8) ?? ""
+        if request == #"{"ping":{}}"# {
+            return try JSONEncoder().encode(IPCResponse(success: true, value: nil, error: nil))
+        }
+        throw IPCError.invalidFrame("unsupported request")
+    }
+}
+
 final class IPCInjectionTests: XCTestCase {
 
     func testTemperatureReaderAcceptsInjectedClient() async {
@@ -34,5 +44,16 @@ final class IPCInjectionTests: XCTestCase {
             // Success: the injected client was used (real shared would try real socket).
             XCTAssertTrue(error is IPCError || (error as? IPCError) != nil || error.localizedDescription.contains("No response"))
         }
+    }
+
+    func testIPCClientCanDetectLegacyHelper() async {
+        let transport = LegacyPingOnlyTransport()
+        let client = IPCClient(transport: transport)
+
+        let ping = await client.ping()
+        let legacyPing = await client.legacyPing()
+
+        XCTAssertFalse(ping)
+        XCTAssertTrue(legacyPing)
     }
 }

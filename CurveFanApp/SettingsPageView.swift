@@ -8,7 +8,8 @@ struct SettingsPageView: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 PageHeader(
                     subtitle: "CurveFan system behavior",
-                    isConnected: isConnected
+                    isConnected: isConnected,
+                    onRetry: { Task { await state.reconnect() } }
                 )
 
                 SettingsGeneralGroup(state: state)

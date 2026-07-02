@@ -17,8 +17,8 @@ enum HelperInstaller {
 
     /// Shows a permission dialog and installs the helper if needed.
     /// Returns true if the helper is ready to use after this call.
-    static func installIfNeeded() -> Bool {
-        guard !isInstalled else { return true }
+    static func installIfNeeded(force: Bool = false) -> Bool {
+        guard force || !isInstalled else { return true }
 
         guard let src = Bundle.main.path(forResource: "CurveFanHelper", ofType: nil) else {
             showError("Embedded helper not found in app bundle. Re-download CurveFan.")
@@ -26,9 +26,11 @@ enum HelperInstaller {
         }
 
         let alert = NSAlert()
-        alert.messageText = "CurveFan needs to install a helper"
-        alert.informativeText = "A privileged helper is required to read and control your fans. macOS will ask for your password once."
-        alert.addButton(withTitle: "Install Helper")
+        alert.messageText = force ? "CurveFan needs to update its helper" : "CurveFan needs to install a helper"
+        alert.informativeText = force
+            ? "The installed helper is outdated and can't talk to this app build. macOS will ask for your password once to replace it."
+            : "A privileged helper is required to read and control your fans. macOS will ask for your password once."
+        alert.addButton(withTitle: force ? "Update Helper" : "Install Helper")
         alert.addButton(withTitle: "Quit")
         alert.alertStyle = .informational
         if alert.runModal() != .alertFirstButtonReturn {
@@ -47,6 +49,14 @@ enum HelperInstaller {
         cp '\(src)' '\(helperDst)'
         chown root:wheel '\(helperDst)'
         chmod 755 '\(helperDst)'
+
+        # Aggressively kill any stale helper (debug builds, old installs) that may
+        # still hold the socket. Without this, launchctl load succeeds but the new
+        # daemon fails to bind, leaving the app "offline".
+        pkill -9 -f curvefan-helper 2>/dev/null || true
+        sleep 1
+        rm -f /var/run/curvefan-helper.socket 2>/dev/null || true
+
         cat > '\(plistDst)' << 'ENDPLIST'
         \(plist)
         ENDPLIST

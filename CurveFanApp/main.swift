@@ -162,12 +162,39 @@ final class AppState: ObservableObject {
             guard HelperInstaller.installIfNeeded() else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
         }
-        if await ipc.ping() {
-            connectionStatus = .connected
-            startPolling()
-        } else {
-            connectionStatus = .disconnected
+
+        for attempt in 1...5 {
+            if await ipc.ping() {
+                connectionStatus = .connected
+                startPolling()
+                return
+            }
+            if attempt < 5 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
         }
+
+        if HelperInstaller.isInstalled, await ipc.legacyPing() {
+            guard HelperInstaller.installIfNeeded(force: true) else {
+                connectionStatus = .error("Installed helper is outdated. Please update it.")
+                return
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if await ipc.ping() {
+                connectionStatus = .connected
+                startPolling()
+                return
+            }
+        }
+
+        connectionStatus = .disconnected
+    }
+
+    /// Force a fresh connection check. Useful after manual helper repair or when UI shows Offline.
+    func reconnect() async {
+        pollingController.stop()
+        connectionStatus = .disconnected
+        await checkDaemon()
     }
 
     func startPolling() {

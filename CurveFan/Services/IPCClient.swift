@@ -27,9 +27,24 @@ public actor IPCClient {
         return try IPCSerializer.decode(responseData)
     }
 
+    public func sendLegacy(_ command: IPCCommand) async throws -> IPCResponse {
+        let reqData = try JSONEncoder().encode(command)
+        let responseData = try await transport.roundTrip(reqData)
+        return try IPCSerializer.decode(responseData)
+    }
+
     public func ping() async -> Bool {
         do {
             let resp = try await send(.ping)
+            return resp.success
+        } catch {
+            return false
+        }
+    }
+
+    public func legacyPing() async -> Bool {
+        do {
+            let resp = try await sendLegacy(.ping)
             return resp.success
         } catch {
             return false

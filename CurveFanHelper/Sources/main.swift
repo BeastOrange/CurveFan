@@ -6,39 +6,39 @@ import Foundation
 import CurveFanCore
 import os
 
-let socketPath = ProcessInfo.processInfo.environment["CURVEFAN_SOCKET_PATH"] ?? "/var/run/curvefan-helper.socket"
-let fakeSMC = ProcessInfo.processInfo.environment["CURVEFAN_HELPER_FAKE_SMC"] == "1"
-let smc = SMCService.shared
+@main
+enum CurveFanHelperMain {
+    static func main() async {
+        let socketPath = ProcessInfo.processInfo.environment["CURVEFAN_SOCKET_PATH"] ?? "/var/run/curvefan-helper.socket"
+        let fakeSMC = ProcessInfo.processInfo.environment["CURVEFAN_HELPER_FAKE_SMC"] == "1"
+        let smc = SMCService.shared
 
-if fakeSMC {
-    os_log(.info, "CurveFanHelper daemon started in fake SMC mode")
-} else {
-    let sem = DispatchSemaphore(value: 0)
-    Task {
-        do {
-            try await smc.open()
-        } catch {
-            fatalError("SMC open failed: \(error.localizedDescription)")
+        if fakeSMC {
+            os_log(.info, "CurveFanHelper daemon started in fake SMC mode")
+        } else {
+            do {
+                try await smc.open()
+            } catch {
+                fatalError("SMC open failed: \(error.localizedDescription)")
+            }
+            os_log(.info, "CurveFanHelper daemon started, SMC connected")
         }
-        sem.signal()
-    }
-    sem.wait()
-    os_log(.info, "CurveFanHelper daemon started, SMC connected")
-}
 
-let handler = CommandHandler(smc: smc, fakeSMC: fakeSMC)
-let server = SMCServer(path: socketPath, handler: handler)
-Task { await server.start() }
+        let handler = CommandHandler(smc: smc, fakeSMC: fakeSMC)
+        let server = SMCServer(path: socketPath, handler: handler)
+        await server.start()
 
-let signals = SignalHandling(queue: .global(qos: .userInitiated))
-Task {
-    await signals.install { @Sendable in
-        Task {
-            await server.stop()
-            await handler.restoreAllFansForCleanup()
-            exit(0)
+        let signals = SignalHandling(queue: .global(qos: .userInitiated))
+        await signals.install { @Sendable in
+            Task {
+                await server.stop()
+                await handler.restoreAllFansForCleanup()
+                exit(0)
+            }
+        }
+
+        await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in
+            // Keep the daemon alive until a signal handler calls exit(0).
         }
     }
 }
-
-RunLoop.main.run()

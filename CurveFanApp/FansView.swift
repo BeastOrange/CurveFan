@@ -10,7 +10,8 @@ struct FansView: View {
             VStack(alignment: .leading, spacing: 18) {
                 PageHeader(
                     subtitle: "Fan hardware and override state",
-                    isConnected: isConnected
+                    isConnected: isConnected,
+                    onRetry: { Task { await state.reconnect() } }
                 )
 
                 FansInventoryGroup(rows: rows, selectedFanID: $selectedFanID)

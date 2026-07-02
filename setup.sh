@@ -15,6 +15,21 @@ log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+bundled_app_root() {
+    local resources_dir="$1"
+    local contents_dir
+
+    contents_dir="$(cd "$resources_dir/.." 2>/dev/null && pwd -P)" || return 1
+    if [ "$(basename "$contents_dir")" != "Contents" ]; then
+        return 1
+    fi
+    if [ ! -f "$contents_dir/Info.plist" ]; then
+        return 1
+    fi
+
+    cd "$contents_dir/.." && pwd -P
+}
+
 check_status() {
     echo "CurveFan Installation Status:"
     echo "=============================="
@@ -47,24 +62,34 @@ check_status() {
 }
 
 do_install() {
-    if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ]; then
-        log_info "Building as $SUDO_USER to avoid root-owned .build artifacts..."
-        sudo -u "$SUDO_USER" swift build -c release || { log_error "Build failed"; exit 1; }
-        sudo -u "$SUDO_USER" bash build_app.sh release || { log_error "App bundle build failed"; exit 1; }
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+    APP_BUNDLE_SRC="$(bundled_app_root "$SCRIPT_DIR" || true)"
+
+    # Prefer the bundled helper/app (DMG install path). Fall back to a
+    # repo-side release build when running setup.sh from a source checkout.
+    if [ -f "$SCRIPT_DIR/CurveFanHelper" ]; then
+        HELPER_SRC="$SCRIPT_DIR/CurveFanHelper"
+    elif [ -f .build/release/CurveFanHelper ]; then
+        HELPER_SRC=".build/release/CurveFanHelper"
+    elif [ -f .build/apple/Products/Release/CurveFanHelper ]; then
+        HELPER_SRC=".build/apple/Products/Release/CurveFanHelper"
     else
-        log_info "Building CurveFan..."
-        swift build -c release || { log_error "Build failed"; exit 1; }
-        bash build_app.sh release || { log_error "App bundle build failed"; exit 1; }
+        if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ]; then
+            log_info "Building as $SUDO_USER to avoid root-owned .build artifacts..."
+            sudo -u "$SUDO_USER" swift build -c release || { log_error "Build failed"; exit 1; }
+            sudo -u "$SUDO_USER" bash build_app.sh release || { log_error "App bundle build failed"; exit 1; }
+        else
+            log_info "Building CurveFan..."
+            swift build -c release || { log_error "Build failed"; exit 1; }
+            bash build_app.sh release || { log_error "App bundle build failed"; exit 1; }
+        fi
+        HELPER_SRC=".build/release/CurveFanHelper"
     fi
 
     log_info "Installing helper daemon..."
     sudo mkdir -p /Library/PrivilegedHelperTools
 
-    if [ -f .build/release/CurveFanHelper ]; then
-        HELPER_SRC=".build/release/CurveFanHelper"
-    elif [ -f .build/apple/Products/Release/CurveFanHelper ]; then
-        HELPER_SRC=".build/apple/Products/Release/CurveFanHelper"
-    else
+    if [ ! -f "$HELPER_SRC" ]; then
         log_error "Cannot find CurveFanHelper binary"
         exit 1
     fi
@@ -74,15 +99,36 @@ do_install() {
     sudo chmod 755 "$HELPER_BIN"
     log_info "Helper binary installed"
 
-    log_info "Installing app bundle..."
-    sudo rm -rf "$APP_DEST"
-    sudo cp -R ".build/release/CurveFan.app" "$APP_DEST"
-    sudo chown -R root:wheel "$APP_DEST"
-    sudo chmod -R u+rwX,go+rX "$APP_DEST"
-    log_info "App installed at $APP_DEST"
+    log_info "Stopping any running helper processes..."
+    sudo pkill -9 -f curvefan-helper 2>/dev/null || true
+    sleep 0.5
+
+    if [ -e "$SOCKET_PATH" ]; then
+        log_info "Removing stale socket at $SOCKET_PATH..."
+        sudo rm -f "$SOCKET_PATH" || true
+    fi
+
+    if [ -n "$APP_BUNDLE_SRC" ] && [ -d "$APP_DEST" ] && [ "$APP_BUNDLE_SRC" = "$(cd "$APP_DEST" && pwd -P)" ]; then
+        log_info "App bundle already at $APP_DEST (in-place helper install)"
+    else
+        log_info "Installing app bundle..."
+        sudo rm -rf "$APP_DEST"
+        if [ -n "$APP_BUNDLE_SRC" ]; then
+            APP_SRC="$APP_BUNDLE_SRC"
+        elif [ -d ".build/release/CurveFan.app" ]; then
+            APP_SRC=".build/release/CurveFan.app"
+        else
+            log_error "Cannot find CurveFan.app to install"
+            exit 1
+        fi
+        sudo cp -R "$APP_SRC" "$APP_DEST"
+        sudo chown -R root:wheel "$APP_DEST"
+        sudo chmod -R u+rwX,go+rX "$APP_DEST"
+        log_info "App installed at $APP_DEST"
+    fi
 
     log_info "Setting up LaunchDaemon..."
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
     if [ -f "$SCRIPT_DIR/com.curvefan.helper.plist" ]; then
         sudo cp "$SCRIPT_DIR/com.curvefan.helper.plist" "$PLIST_PATH"
     else
@@ -115,12 +161,27 @@ PLISTEOF
     log_info "Loading daemon..."
     sudo launchctl unload "$PLIST_PATH" 2>/dev/null || true
     sudo launchctl load -w "$PLIST_PATH"
-    sleep 1
+    sudo launchctl kickstart -k system/com.curvefan.helper 2>/dev/null || true
 
-    if pgrep -f curvefan-helper > /dev/null 2>&1; then
+    local ready=0
+    for _ in {1..20}; do
+        if pgrep -f curvefan-helper > /dev/null 2>&1 && [ -S "$SOCKET_PATH" ]; then
+            ready=1
+            break
+        fi
+        sleep 0.5
+    done
+
+    if [ "$ready" = "1" ]; then
         log_info "CurveFan helper daemon is running"
     else
         log_error "Daemon failed to start. Check logs: /var/log/curvefan-helper.log"
+        if [ -f /var/log/curvefan-helper.log ]; then
+            echo "----- Last 30 lines of helper log -----"
+            tail -30 /var/log/curvefan-helper.log || true
+            echo "---------------------------------------"
+        fi
+        sudo launchctl print system/com.curvefan.helper 2>&1 || true
         exit 1
     fi
 
