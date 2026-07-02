@@ -172,7 +172,17 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         self.createdAt = createdAt
     }
 
+    public var isAuto: Bool { name == "Auto" }
+
     public static let auto = Preset(name: "Auto", fanToCurve: [:], fanToSensor: [:])
+
+    private enum DefaultRPM {
+        static let quietLow = 1200
+        static let quietMid = 2500
+        static let balancedLow = 1200
+        static let balancedMid = 2000
+        static let balancedHigh = 3500
+    }
 
     public static func quiet(maxRPM: Int) -> Preset {
         quiet(maxRPM: maxRPM, sensorKey: "")
@@ -180,9 +190,9 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
     public static func quiet(maxRPM: Int, sensorKey: String) -> Preset {
         let curve = FanCurve(name: "Quiet", points: [
-            CurvePoint(temperature: 20, rpm: 1200),
-            CurvePoint(temperature: 45, rpm: 1200),
-            CurvePoint(temperature: 70, rpm: 2500),
+            CurvePoint(temperature: 20, rpm: DefaultRPM.quietLow),
+            CurvePoint(temperature: 45, rpm: DefaultRPM.quietLow),
+            CurvePoint(temperature: 70, rpm: DefaultRPM.quietMid),
             CurvePoint(temperature: 100, rpm: maxRPM)
         ], sensorKey: sensorKey)
         return Preset(name: "Quiet", fanToCurve: [0: curve], fanToSensor: sensorKey.isEmpty ? [:] : [0: sensorKey])
@@ -194,9 +204,9 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
     public static func balanced(maxRPM: Int, sensorKey: String) -> Preset {
         let curve = FanCurve(name: "Balanced", points: [
-            CurvePoint(temperature: 20, rpm: 1200),
-            CurvePoint(temperature: 50, rpm: 2000),
-            CurvePoint(temperature: 70, rpm: 3500),
+            CurvePoint(temperature: 20, rpm: DefaultRPM.balancedLow),
+            CurvePoint(temperature: 50, rpm: DefaultRPM.balancedMid),
+            CurvePoint(temperature: 70, rpm: DefaultRPM.balancedHigh),
             CurvePoint(temperature: 100, rpm: maxRPM)
         ], sensorKey: sensorKey)
         return Preset(name: "Balanced", fanToCurve: [0: curve], fanToSensor: sensorKey.isEmpty ? [:] : [0: sensorKey])

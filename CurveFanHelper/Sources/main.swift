@@ -13,18 +13,32 @@ let smc = SMCService.shared
 if fakeSMC {
     os_log(.info, "CurveFanHelper daemon started in fake SMC mode")
 } else {
-    try smc.open()
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        do {
+            try await smc.open()
+        } catch {
+            fatalError("SMC open failed: \(error.localizedDescription)")
+        }
+        sem.signal()
+    }
+    sem.wait()
     os_log(.info, "CurveFanHelper daemon started, SMC connected")
 }
 
 let handler = CommandHandler(smc: smc, fakeSMC: fakeSMC)
 let server = SMCServer(path: socketPath, handler: handler)
-server.start()
+Task { await server.start() }
 
-let signals = SignalHandling(queue: .main)
-signals.install {
-    server.stop()
-    handler.restoreAllFansForCleanup()
+let signals = SignalHandling(queue: .global(qos: .userInitiated))
+Task {
+    await signals.install { @Sendable in
+        Task {
+            await server.stop()
+            await handler.restoreAllFansForCleanup()
+            exit(0)
+        }
+    }
 }
 
 RunLoop.main.run()

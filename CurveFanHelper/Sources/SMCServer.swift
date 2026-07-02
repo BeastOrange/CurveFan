@@ -7,17 +7,18 @@ import CurveFanCore
 import Darwin
 import os
 
-final class SMCServer: @unchecked Sendable {
+actor SMCServer {
     private let path: String
     private let handler: CommandHandler
     private var listenFD: Int32 = -1
+    private var acceptTask: Task<Void, Never>?
 
     init(path: String, handler: CommandHandler) {
         self.path = path
         self.handler = handler
     }
 
-    /// Opens the listening socket and starts the accept loop on a background queue.
+    /// Opens the listening socket and starts the accept loop.
     /// Fatal on socket/bind/listen failure (same as original behavior).
     func start() {
         unlink(path)
@@ -48,40 +49,61 @@ final class SMCServer: @unchecked Sendable {
         guard listen(fd, 5) == 0 else { fatalError("listen() failed") }
         os_log(.info, "listening on %{public}@", path)
 
-        DispatchQueue.global().async { [self] in
-            acceptLoop()
+        // Launch the blocking accept loop off the actor's executor using a snapshot of the fd.
+        let acceptFD = listenFD
+        acceptTask = Task.detached { [handler] in
+            Self.runAcceptLoop(listenFD: acceptFD, handler: handler)
         }
     }
 
-    /// Unlinks the socket path. Safe to call from any queue.
-    func stop() {
+    func stop() async {
+        acceptTask?.cancel()
+        acceptTask = nil
+        if listenFD >= 0 {
+            close(listenFD)
+            listenFD = -1
+        }
         unlink(path)
     }
 
-    private func acceptLoop() {
-        while true {
+    private static func runAcceptLoop(listenFD: Int32, handler: CommandHandler) {
+        while !Task.isCancelled {
             let client = accept(listenFD, nil, nil)
-            guard client >= 0 else { continue }
+            guard client >= 0 else {
+                if Task.isCancelled { return }
+                continue
+            }
             DispatchQueue.global().async { [handler] in
-                defer { close(client) }
-                guard PeerAuth.peerIsAuthorized(socket: client) else {
-                    os_log(.error, "rejected unauthorized IPC peer")
-                    return
-                }
-                let decoder = JSONDecoder()
-                let encoder = JSONEncoder()
-                do {
-                    let request = try receiveFrame(socket: client)
-                    let response: IPCResponse
-                    if let command = try? decoder.decode(IPCCommand.self, from: request) {
-                        response = handler.respond(to: command)
-                    } else {
-                        response = IPCResponse(success: false, value: nil, error: "invalid command")
+                Task {
+                    defer { close(client) }
+                    guard PeerAuth.peerIsAuthorized(socket: client) else {
+                        os_log(.error, "rejected unauthorized IPC peer")
+                        return
                     }
-                    let responseData = try encoder.encode(response)
-                    try sendFrame(responseData, socket: client)
-                } catch {
-                    os_log(.error, "IPC error: %{public}@", error.localizedDescription)
+                    let encoder = JSONEncoder()
+                    do {
+                        let request = try receiveFrame(socket: client)
+                        let response: IPCResponse
+                        if let payload = try? IPCSerializer.decodeRequest(request) {
+                            guard IPCSerializer.isCompatibleVersion(payload.version) else {
+                                response = IPCResponse(
+                                    success: false,
+                                    value: nil,
+                                    error: "unsupported IPC protocol version \(payload.version)"
+                                )
+                                let responseData = try encoder.encode(response)
+                                try sendFrame(responseData, socket: client)
+                                return
+                            }
+                            response = await handler.respond(to: payload.command)
+                        } else {
+                            response = IPCResponse(success: false, value: nil, error: "invalid command")
+                        }
+                        let responseData = try encoder.encode(response)
+                        try sendFrame(responseData, socket: client)
+                    } catch {
+                        os_log(.error, "IPC error: %{public}@", error.localizedDescription)
+                    }
                 }
             }
         }

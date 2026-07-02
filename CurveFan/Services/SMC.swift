@@ -22,7 +22,7 @@ public enum SMCError: LocalizedError {
     }
 }
 
-public final class SMCService: @unchecked Sendable {
+public actor SMCService {
     public static let shared = SMCService()
 
     private enum Selector: UInt8 {
@@ -39,22 +39,18 @@ public final class SMCService: @unchecked Sendable {
     }
 
     private var conn: io_connect_t = 0
-    private let lock = NSLock()
 
     private init() {}
-    deinit { closeIgnoringErrors() }
 
-    public static var smcParamStructSize: Int {
+    nonisolated public static var smcParamStructSize: Int {
         MemoryLayout<SMCParamStruct>.stride
     }
 
-    public static var driverSelector: UInt32 {
+    nonisolated public static var driverSelector: UInt32 {
         UInt32(Selector.handleYPCEvent.rawValue)
     }
 
     public func open() throws {
-        lock.lock()
-        defer { lock.unlock() }
         guard conn == 0 else { return }
 
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
@@ -66,14 +62,10 @@ public final class SMCService: @unchecked Sendable {
     }
 
     public func close() throws {
-        lock.lock()
-        defer { lock.unlock() }
         try closeLocked()
     }
 
     public func readData(_ key: String) throws -> [UInt8] {
-        lock.lock()
-        defer { lock.unlock() }
         guard conn != 0 else { throw SMCError.invalidData("not connected") }
 
         let keyCode = fourCharCode(key)
@@ -92,8 +84,6 @@ public final class SMCService: @unchecked Sendable {
     }
 
     public func writeData(_ key: String, bytes: [UInt8]) throws {
-        lock.lock()
-        defer { lock.unlock() }
         guard conn != 0 else { throw SMCError.invalidData("not connected") }
 
         let keyCode = fourCharCode(key)
@@ -112,8 +102,6 @@ public final class SMCService: @unchecked Sendable {
     }
 
     public func keyInfo(_ key: String) throws -> (dataSize: Int, dataType: UInt32) {
-        lock.lock()
-        defer { lock.unlock() }
         guard conn != 0 else { throw SMCError.invalidData("not connected") }
 
         let info = try keyInfoLocked(fourCharCode(key), keyName: key)
@@ -124,12 +112,6 @@ public final class SMCService: @unchecked Sendable {
         guard conn != 0 else { return }
         IOServiceClose(conn)
         conn = 0
-    }
-
-    private func closeIgnoringErrors() {
-        lock.lock()
-        defer { lock.unlock() }
-        try? closeLocked()
     }
 
     private func keyInfoLocked(_ keyCode: UInt32, keyName: String) throws -> SMCKeyInfoData {

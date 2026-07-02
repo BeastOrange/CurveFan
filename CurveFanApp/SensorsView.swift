@@ -44,7 +44,7 @@ struct SensorsView: View {
             $0.group == $1.group ? $0.name < $1.name : groupRank($0.group) < groupRank($1.group)
         }.map {
             SensorDisplayRow(name: $0.name, detail: "\($0.key) — \($0.group.rawValue)",
-                             value: state.formatTemp($0.value), icon: icon(for: $0.group))
+                              value: TempFormatter().format($0.value, useFahrenheit: state.useFahrenheit), icon: icon(for: $0.group))
         }
         let fans = state.fanInfo.keys.sorted().compactMap { fan -> SensorDisplayRow? in
             guard let info = state.fanInfo[fan] else { return nil }
@@ -60,12 +60,12 @@ struct SensorsView: View {
 
     private var hottestText: String {
         guard let v = state.temperatures.map(\.value).max() else { return "--" }
-        return state.formatTemp(v)
+        return TempFormatter().format(v, useFahrenheit: state.useFahrenheit)
     }
 
     private var averageText: String {
         guard !state.temperatures.isEmpty else { return "--" }
-        return state.formatTemp(state.temperatures.reduce(0) { $0 + $1.value } / Double(state.temperatures.count))
+        return TempFormatter().format(state.temperatures.reduce(0) { $0 + $1.value } / Double(state.temperatures.count), useFahrenheit: state.useFahrenheit)
     }
 
     private func groupRank(_ g: SensorGroup) -> Int {

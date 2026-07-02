@@ -1,8 +1,13 @@
 import Foundation
+import os
 
 public actor FanController {
     public static let shared = FanController()
-    private let ipc = IPCClient.shared
+    private let ipc: IPCClient
+
+    public init(ipc: IPCClient = .shared) {
+        self.ipc = ipc
+    }
 
     public func getFanInfo(_ fan: Int) async throws -> FanInfo {
         let resp = try await ipc.send(.getFanInfo(fan: fan))
@@ -29,7 +34,7 @@ public actor FanController {
         do {
             try await restoreAuto(fan)
         } catch {
-            NSLog("CurveFan restore auto failed: \(error.localizedDescription)")
+            os_log(.error, "CurveFan restore auto failed: %{public}@", error.localizedDescription)
         }
     }
 
@@ -43,7 +48,7 @@ public actor FanController {
                         try await self.unlockAndSetRPM(0, rpm: Int(info.actualRPM))
                     }
                 } catch {
-                    NSLog("CurveFan wake handling failed: \(error.localizedDescription)")
+                    os_log(.error, "CurveFan wake handling failed: %{public}@", error.localizedDescription)
                 }
             }
         }

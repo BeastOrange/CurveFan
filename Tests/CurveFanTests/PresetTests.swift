@@ -3,7 +3,7 @@ import XCTest
 
 final class PresetTests: XCTestCase {
     func testPresetDefaults() {
-        let defaults = PresetManager.shared.defaults
+        let defaults = PresetFactory.defaults
         XCTAssertEqual(defaults.count, 4)
         XCTAssertEqual(defaults[0].name, "Auto")
         XCTAssertEqual(defaults[1].name, "Quiet")
@@ -12,7 +12,7 @@ final class PresetTests: XCTestCase {
     }
 
     func testDefaultsUseProvidedSensorKey() {
-        let defaults = PresetManager.shared.defaults(maxRPM: 6550, sensorKey: "Tp01")
+        let defaults = PresetFactory.defaults(maxRPM: 6550, sensorKey: "Tp01")
         for preset in defaults.dropFirst() {
             XCTAssertEqual(preset.fanToSensor[0], "Tp01")
             XCTAssertEqual(preset.fanToCurve[0]?.sensorKey, "Tp01")
@@ -67,17 +67,18 @@ final class PresetTests: XCTestCase {
         XCTAssertEqual(decoded.fanToSensor[1], "TC0P")
     }
 
-    func testPresetManagerLoadAllEmptyDirectoryDoesNotIncludeDefaults() throws {
+    func testPresetStoreLoadAllEmptyDirectoryDoesNotIncludeDefaults() async throws {
         let directory = try makeTemporaryPresetDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let manager = PresetManager(presetsDir: directory)
+        let store = PresetStore(presetsDir: directory)
+        let loaded = await store.load()
 
-        XCTAssertTrue(manager.presets.isEmpty)
-        XCTAssertEqual(manager.defaults.count, 4)
+        XCTAssertTrue(loaded.isEmpty)
+        XCTAssertEqual(PresetFactory.defaults.count, 4)
     }
 
-    func testPresetManagerSaveAndLoadCustomPreset() throws {
+    func testPresetStoreSaveAndLoadCustomPreset() async throws {
         let directory = try makeTemporaryPresetDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let preset = Preset(name: "Custom", fanToCurve: [
@@ -87,11 +88,30 @@ final class PresetTests: XCTestCase {
             ], sensorKey: "TC0P")
         ], fanToSensor: [0: "TC0P"])
 
-        let manager = PresetManager(presetsDir: directory)
-        try manager.save(preset)
-        let reloaded = PresetManager(presetsDir: directory)
+        let store = PresetStore(presetsDir: directory)
+        try await store.save(preset)
+        let reloaded = PresetStore(presetsDir: directory)
+        let loaded = await reloaded.load()
 
-        XCTAssertEqual(reloaded.presets, [preset])
+        XCTAssertEqual(loaded, [preset])
+    }
+
+    func testPresetStoreDeleteRemovesPreset() async throws {
+        let directory = try makeTemporaryPresetDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let preset = Preset(name: "ToDelete", fanToCurve: [
+            0: FanCurve(points: [
+                CurvePoint(temperature: 30, rpm: 1200),
+                CurvePoint(temperature: 90, rpm: 6000)
+            ], sensorKey: "TC0P")
+        ], fanToSensor: [0: "TC0P"])
+
+        let store = PresetStore(presetsDir: directory)
+        try await store.save(preset)
+        try await store.delete(id: preset.id)
+        let loaded = await store.load()
+
+        XCTAssertTrue(loaded.isEmpty)
     }
 
     func testPresetIdsAreUnique() {

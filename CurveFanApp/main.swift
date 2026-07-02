@@ -147,11 +147,10 @@ final class AppState: ObservableObject {
     private let pollingController = PollingController()
     private let curveApplicator = CurveApplicator()
     private lazy var presetActions = PresetActions(state: self, curveApplicator: curveApplicator)
-    private let formatter = TempFormatter()
     private var presetCancellable: AnyCancellable?
 
     init() {
-        presetCancellable = PresetManager.shared.objectWillChange
+        presetCancellable = PresetViewModel.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
         Task { await checkDaemon() }
@@ -239,7 +238,7 @@ final class AppState: ObservableObject {
 
     func applyPreset(_ preset: Preset) async {
         activePreset = preset
-        if preset.name == "Auto" {
+        if preset.isAuto {
             await restoreAuto()
             return
         }
@@ -250,17 +249,14 @@ final class AppState: ObservableObject {
     var minRPM: Double { fanInfo[0]?.minRPM ?? 1200 }
     var knownFanCount: Int { max(fanInfo.values.map(\.fanCount).max() ?? 1, 1) }
     var presets: [Preset] { builtInPresets + customPresets }
-    var builtInPresets: [Preset] { PresetManager.shared.defaults(maxRPM: Int(maxRPM), sensorKey: defaultSensorKey) }
-    var customPresets: [Preset] { PresetManager.shared.presets }
+    var builtInPresets: [Preset] { PresetFactory.defaults(maxRPM: Int(maxRPM), sensorKey: defaultSensorKey) }
+    var customPresets: [Preset] { PresetViewModel.shared.presets }
     var defaultSensorKey: String {
         temperatures.first(where: { $0.group == .cpu })?.key ?? temperatures.first?.key ?? ""
     }
     var isCurveFanControlActive: Bool {
-        isManualMode || (activePreset?.name != nil && activePreset?.name != "Auto")
+        isManualMode || (activePreset?.isAuto == false)
     }
-
-    func formatTemp(_ value: Double) -> String { formatter.format(value, useFahrenheit: useFahrenheit) }
-    func tempColor(_ value: Double) -> Color { formatter.color(for: value) }
 
     private func appendRPMHistory(_ rpm: Double) {
         rpmHistory.append(RPMHistorySample(date: Date(), rpm: rpm))

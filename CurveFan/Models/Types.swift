@@ -54,7 +54,10 @@ public enum SensorGroup: String, Codable, Sendable, CaseIterable {
     case fan
 }
 
-public enum FanMode: Int, Codable, Sendable {
+public protocol FanControlModeProtocol: Sendable, RawRepresentable where RawValue == Int {
+}
+
+public enum FanMode: Int, Codable, Sendable, FanControlModeProtocol {
     case auto = 0
     case manual = 1
     case system = 3
@@ -64,4 +67,9 @@ public enum ConnectionStatus: Sendable {
     case connected
     case disconnected
     case error(String)
+
+    public var isConnected: Bool {
+        if case .connected = self { return true }
+        return false
+    }
 }
