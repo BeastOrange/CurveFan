@@ -6,7 +6,7 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 PageHeader(
                     subtitle: "Apple Silicon thermal and fan control",
                     isConnected: isConnected
@@ -24,7 +24,7 @@ struct OverviewView: View {
                     samples: state.rpmHistory
                 )
 
-                HStack(alignment: .top, spacing: 18) {
+                HStack(alignment: .top, spacing: DesignTokens.Spacing.section) {
                     FanControlsGroup(
                         state: state,
                         selectedPreset: selectedPreset,
@@ -45,7 +45,7 @@ struct OverviewView: View {
                         .frame(minWidth: 260, maxWidth: 340)
                 }
             }
-            .padding(24)
+            .padding(DesignTokens.Spacing.page)
         }
     }
 
@@ -95,12 +95,12 @@ struct OverviewSummaryGroup: View {
     let samples: [RPMHistorySample]
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 18) {
+        CardView(title: "Overview", systemImage: "gauge.with.dots.needle.50percent") {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.compact) {
                         Text(rpm.map { "\(formatRPM($0)) RPM" } ?? "-- RPM")
-                            .font(.system(size: 42, weight: .bold, design: .rounded))
+                            .font(DesignTokens.Typography.largeRPM)
                             .monospacedDigit()
                         Text(controlText)
                             .font(.callout)
@@ -108,7 +108,7 @@ struct OverviewSummaryGroup: View {
                     }
                 }
 
-                HStack(spacing: 18) {
+                HStack(spacing: DesignTokens.Spacing.section) {
                     RPMTrendChart(
                         samples: samples,
                         currentRPM: rpm,
@@ -128,9 +128,6 @@ struct OverviewSummaryGroup: View {
                     .frame(maxWidth: 200)
                 }
             }
-            .padding(6)
-        } label: {
-            Label("Overview", systemImage: "gauge.with.dots.needle.50percent")
         }
     }
 }
@@ -143,7 +140,7 @@ struct FanControlsGroup: View {
     let onApplyManual: () -> Void
 
     var body: some View {
-        GroupBox {
+        CardView(title: "Fan Controls", systemImage: "fan") {
             VStack(alignment: .leading, spacing: 16) {
                 LabeledContent("Control mode") {
                     Picker("Control mode", selection: controlBinding) {
@@ -201,9 +198,6 @@ struct FanControlsGroup: View {
                     Button("Apply Manual", action: onApplyManual)
                 }
             }
-            .padding(6)
-        } label: {
-            Label("Fan Controls", systemImage: "fan")
         }
     }
 

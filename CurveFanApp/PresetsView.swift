@@ -12,13 +12,13 @@ struct PresetsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 PageHeader(
                     subtitle: "Native macOS preset management",
                     isConnected: isConnected
                 )
 
-                HStack(alignment: .top, spacing: 18) {
+                HStack(alignment: .top, spacing: DesignTokens.Spacing.section) {
                     PresetLibraryGroup(
                         builtInPresets: state.builtInPresets,
                         customPresets: state.customPresets,
@@ -39,7 +39,7 @@ struct PresetsView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .padding(24)
+            .padding(DesignTokens.Spacing.page)
         }
         .sheet(item: $editorMode) { mode in
             PresetEditorView(state: state, preset: mode.preset) { savedPreset in
@@ -265,8 +265,8 @@ private struct PresetDetailGroup: View {
     let onDelete: () -> Void
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 18) {
+        CardView(title: "Preset Details", systemImage: "chart.xyaxis.line") {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 header
 
                 NativeMetricTable(rows: [
@@ -285,9 +285,6 @@ private struct PresetDetailGroup: View {
 
                 actionButtons
             }
-            .padding(6)
-        } label: {
-            Label("Preset Details", systemImage: "chart.xyaxis.line")
         }
     }
 
@@ -390,7 +387,7 @@ private struct PresetEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
             HStack {
                 Text(preset == nil ? "New Preset" : "Edit Preset")
                     .font(.title2.weight(.semibold))
@@ -858,7 +855,7 @@ private struct CurvePreviewGroup: View {
     let maxRPM: Double
 
     var body: some View {
-        GroupBox {
+        CardView(title: "Fan Curve Preview", systemImage: "point.topleft.down.curvedto.point.bottomright.up") {
             if let curve, !curve.points.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Temperature response - Celsius")
@@ -867,15 +864,11 @@ private struct CurvePreviewGroup: View {
                     CurvePreview(curve: curve, minRPM: minRPM, maxRPM: maxRPM)
                         .frame(height: 170)
                 }
-                .padding(6)
             } else {
                 Text("System Auto has no CurveFan curve preview.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .padding(6)
             }
-        } label: {
-            Label("Fan Curve Preview", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
         }
     }
 }

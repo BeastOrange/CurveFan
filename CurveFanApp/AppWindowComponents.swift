@@ -99,24 +99,18 @@ struct PreferencesGroup: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        GroupBox {
-            Form {
-                Picker("Temperature unit", selection: $state.useFahrenheit) {
-                    Text("Celsius").tag(false)
-                    Text("Fahrenheit").tag(true)
-                }
-                .pickerStyle(.segmented)
-
-                Picker("Polling interval", selection: $state.pollingInterval) {
-                    Text("1 sec").tag(1.0)
-                    Text("2 sec").tag(2.0)
-                    Text("5 sec").tag(5.0)
-                }
+        FormCard(title: "Preferences", systemImage: "gearshape") {
+            Picker("Temperature unit", selection: $state.useFahrenheit) {
+                Text("Celsius").tag(false)
+                Text("Fahrenheit").tag(true)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-        } label: {
-            Label("Preferences", systemImage: "gearshape")
+            .pickerStyle(.segmented)
+
+            Picker("Polling interval", selection: $state.pollingInterval) {
+                Text("1 sec").tag(1.0)
+                Text("2 sec").tag(2.0)
+                Text("5 sec").tag(5.0)
+            }
         }
     }
 }

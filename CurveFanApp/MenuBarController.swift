@@ -3,11 +3,6 @@ import AppKit
 import Combine
 import CurveFanCore
 
-/// Set by OpenWindowCapture; opens a SwiftUI WindowGroup from AppKit context.
-@MainActor var curveFanOpenWindow: ((String) -> Void)?
-/// Set by MainWindowLifecycle; used to bring the existing main window to front.
-@MainActor var curveFanMainWindow: NSWindow?
-
 /// Borderless panel that can still become key — required so sliders and
 /// buttons inside the SwiftUI content receive events.
 final class StatusPanel: NSPanel {
@@ -19,13 +14,15 @@ final class StatusPanel: NSPanel {
 @MainActor
 final class StatusItemController: NSObject {
     private let state: AppState
+    private let coordinator: WindowCoordinator
     private var statusItem: NSStatusItem!
     private let panel: StatusPanel
     private var resignObserver: NSObjectProtocol?
     private var cancellable: AnyCancellable?
 
-    init(state: AppState) {
+    init(state: AppState, coordinator: WindowCoordinator) {
         self.state = state
+        self.coordinator = coordinator
         self.panel = StatusPanel(
             contentRect: NSRect(x: 0, y: 0, width: 372, height: 420),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -52,6 +49,7 @@ final class StatusItemController: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView:
             MainView(state: state)
+                .environment(\.windowCoordinator, coordinator)
                 .frame(width: 372)
                 .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

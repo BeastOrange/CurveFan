@@ -18,7 +18,7 @@ struct FansInventoryGroup: View {
     @Binding var selectedFanID: Int?
 
     var body: some View {
-        GroupBox {
+        CardView(title: "Fans", systemImage: "fan") {
             VStack(alignment: .leading, spacing: 0) {
                 FanHeaderRow()
                     .padding(.horizontal, 12)
@@ -44,9 +44,6 @@ struct FansInventoryGroup: View {
                     .frame(height: min(CGFloat(rows.count) * 74 + 12, 260))
                 }
             }
-            .padding(6)
-        } label: {
-            Label("Fans", systemImage: "fan")
         }
     }
 }
@@ -118,7 +115,7 @@ struct ManualFanControlGroup: View {
     let isConnected: Bool
 
     var body: some View {
-        GroupBox {
+        CardView(title: "Manual Control", systemImage: "slider.horizontal.3") {
             VStack(alignment: .leading, spacing: 16) {
                 Form {
                     Picker("Fan", selection: $selectedFanID) {
@@ -161,9 +158,6 @@ struct ManualFanControlGroup: View {
                 }
                 .disabled(rows.isEmpty || !isConnected)
             }
-            .padding(6)
-        } label: {
-            Label("Manual Control", systemImage: "slider.horizontal.3")
         }
     }
 
@@ -181,30 +175,24 @@ struct FanStatusGroup: View {
     let isConnected: Bool
 
     var body: some View {
-        GroupBox {
-            Form {
-                LabeledContent("SMC sync") {
-                    Text(isConnected ? "Connected" : "Offline")
-                }
-                LabeledContent("Selected fan") {
-                    Text(selectedRow?.name ?? "--")
-                }
-                LabeledContent("Hardware mode") {
-                    Text(selectedRow.map { hardwareModeText($0.info.mode) } ?? "--")
-                }
-                LabeledContent("Temperature sensor") {
-                    Text(state.defaultSensorKey.isEmpty ? "Pending" : state.defaultSensorKey)
-                }
-                LabeledContent("Last refresh") {
-                    Text(lastRefreshText).monospacedDigit()
-                }
+        FormCard(title: "Status", systemImage: "checklist") {
+            LabeledContent("SMC sync") {
+                Text(isConnected ? "Connected" : "Offline")
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .frame(minHeight: 178)
-        } label: {
-            Label("Status", systemImage: "checklist")
+            LabeledContent("Selected fan") {
+                Text(selectedRow?.name ?? "--")
+            }
+            LabeledContent("Hardware mode") {
+                Text(selectedRow.map { hardwareModeText($0.info.mode) } ?? "--")
+            }
+            LabeledContent("Temperature sensor") {
+                Text(state.defaultSensorKey.isEmpty ? "Pending" : state.defaultSensorKey)
+            }
+            LabeledContent("Last refresh") {
+                Text(lastRefreshText).monospacedDigit()
+            }
         }
+        .frame(minHeight: 178)
     }
 
     private var lastRefreshText: String {
@@ -227,7 +215,7 @@ struct CurveSummaryGroup: View {
     let maxRPM: Double
 
     var body: some View {
-        GroupBox {
+        CardView(title: "Control Curve", systemImage: "chart.xyaxis.line") {
             VStack(alignment: .leading, spacing: 14) {
                 LabeledContent("Active curve") {
                     Text(preset?.name ?? "System Auto")
@@ -242,9 +230,6 @@ struct CurveSummaryGroup: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(6)
-        } label: {
-            Label("Control Curve", systemImage: "chart.xyaxis.line")
         }
     }
 }

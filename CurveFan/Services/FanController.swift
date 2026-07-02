@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 
 public actor FanController {
     public static let shared = FanController()
@@ -34,12 +33,8 @@ public actor FanController {
         }
     }
 
-    public func observeWakeEvents() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+    public func observeWakeEvents(from source: WakeEventSource) async {
+        await source.observeWake { [weak self] in
             guard let self else { return }
             Task {
                 do {

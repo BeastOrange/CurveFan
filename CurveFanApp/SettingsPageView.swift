@@ -5,7 +5,7 @@ struct SettingsPageView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
                 PageHeader(
                     subtitle: "CurveFan system behavior",
                     isConnected: isConnected
@@ -15,7 +15,7 @@ struct SettingsPageView: View {
                 SettingsHelperGroup(state: state, isConnected: isConnected)
                 SettingsAdvancedGroup(state: state)
             }
-            .padding(24)
+            .padding(DesignTokens.Spacing.page)
         }
     }
 
@@ -29,27 +29,21 @@ private struct SettingsGeneralGroup: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        GroupBox {
-            Form {
-                Picker("Temperature unit", selection: $state.useFahrenheit) {
-                    Text("Celsius").tag(false)
-                    Text("Fahrenheit").tag(true)
-                }
-                .pickerStyle(.menu)
-
-                Picker("Polling interval", selection: pollingBinding) {
-                    Text("1 second").tag(1.0)
-                    Text("2 seconds").tag(2.0)
-                    Text("5 seconds").tag(5.0)
-                }
-                .pickerStyle(.menu)
-
-                Toggle("Show RPM in menu bar", isOn: $state.showMenuBarRPM)
+        FormCard(title: "General", systemImage: "gearshape") {
+            Picker("Temperature unit", selection: $state.useFahrenheit) {
+                Text("Celsius").tag(false)
+                Text("Fahrenheit").tag(true)
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-        } label: {
-            Label("General", systemImage: "gearshape")
+            .pickerStyle(.menu)
+
+            Picker("Polling interval", selection: pollingBinding) {
+                Text("1 second").tag(1.0)
+                Text("2 seconds").tag(2.0)
+                Text("5 seconds").tag(5.0)
+            }
+            .pickerStyle(.menu)
+
+            Toggle("Show RPM in menu bar", isOn: $state.showMenuBarRPM)
         }
     }
 
@@ -66,36 +60,30 @@ private struct SettingsHelperGroup: View {
     let isConnected: Bool
 
     var body: some View {
-        GroupBox {
-            Form {
-                LabeledContent("Helper IPC") {
-                    Label(connectionText, systemImage: "circle.fill")
-                        .foregroundStyle(isConnected ? .green : .red)
-                }
+        FormCard(title: "Helper", systemImage: "bolt.horizontal") {
+            LabeledContent("Helper IPC") {
+                Label(connectionText, systemImage: "circle.fill")
+                    .foregroundStyle(isConnected ? .green : .red)
+            }
 
-                LabeledContent("Last refresh") {
-                    Text(state.lastPollDate?.formatted(date: .omitted, time: .standard) ?? "--")
-                        .monospacedDigit()
-                }
+            LabeledContent("Last refresh") {
+                Text(state.lastPollDate?.formatted(date: .omitted, time: .standard) ?? "--")
+                    .monospacedDigit()
+            }
 
-                LabeledContent("Primary sensor") {
-                    Text(state.defaultSensorKey.isEmpty ? "Pending" : state.defaultSensorKey)
-                }
+            LabeledContent("Primary sensor") {
+                Text(state.defaultSensorKey.isEmpty ? "Pending" : state.defaultSensorKey)
+            }
 
-                HStack {
-                    Spacer()
-                    Button("Refresh Helper") {
-                        Task { await state.checkDaemon() }
-                    }
-                    Button("Restore System Auto") {
-                        Task { await state.restoreAuto() }
-                    }
+            HStack {
+                Spacer()
+                Button("Refresh Helper") {
+                    Task { await state.checkDaemon() }
+                }
+                Button("Restore System Auto") {
+                    Task { await state.restoreAuto() }
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-        } label: {
-            Label("Helper", systemImage: "bolt.horizontal")
         }
     }
 
@@ -112,24 +100,18 @@ private struct SettingsAdvancedGroup: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        GroupBox {
-            Form {
-                LabeledContent("Control fallback") {
-                    Text("Restore Auto on quit")
-                        .foregroundStyle(.secondary)
-                }
+        FormCard(title: "Advanced", systemImage: "exclamationmark.triangle") {
+            LabeledContent("Control fallback") {
+                Text("Restore Auto on quit")
+                    .foregroundStyle(.secondary)
+            }
 
-                HStack {
-                    Spacer()
-                    Button("Quit CurveFan", role: .destructive) {
-                        state.quitAfterRestoringAuto()
-                    }
+            HStack {
+                Spacer()
+                Button("Quit CurveFan", role: .destructive) {
+                    state.quitAfterRestoringAuto()
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-        } label: {
-            Label("Advanced", systemImage: "exclamationmark.triangle")
         }
     }
 }

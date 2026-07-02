@@ -75,8 +75,8 @@ struct ManualTargetCard: View {
                     .disabled(!isConnected)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DesignTokens.Spacing.menuBarHeaderH)
+        .padding(.vertical, DesignTokens.Spacing.menuBarHeaderV)
     }
 
     private var safeRange: ClosedRange<Double> {
